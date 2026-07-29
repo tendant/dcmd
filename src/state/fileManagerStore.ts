@@ -150,7 +150,9 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   setCursor: (pane, index) => {
     set((state) => {
       const paneState = state.panes[pane];
-      const clamped = Math.max(0, Math.min(index, paneState.entries.length - 1));
+      // Max cursor is entries.length because of synthetic ".." at index 0
+      // So indices go from 0 (parent) to entries.length (last real entry)
+      const clamped = Math.max(0, Math.min(index, paneState.entries.length));
       return {
         panes: {
           ...state.panes,
