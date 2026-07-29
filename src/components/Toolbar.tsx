@@ -12,6 +12,7 @@ export function Toolbar() {
           <span className="mr-4">Tab Pane</span>
           <span className="mr-4">⏎ Enter Dir</span>
           <span className="mr-4">Space Select</span>
+          <span className="mr-4">Shift+Click Range</span>
           <span>Double-click Open</span>
         </div>
       </div>

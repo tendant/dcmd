@@ -22,7 +22,9 @@ export function FileRow({
   isParentDirectory = false,
 }: FileRowProps) {
   const toggleSelection = useFileManagerStore((s) => s.toggleSelection);
+  const selectRange = useFileManagerStore((s) => s.selectRange);
   const setCursor = useFileManagerStore((s) => s.setCursor);
+  const paneState = useFileManagerStore((s) => s.panes[paneId]);
   const commitRename = useFileManagerStore((s) => s.commitRename);
   const navigate = useFileManagerStore((s) => s.navigate);
   const goToParent = useFileManagerStore((s) => s.goToParent);
@@ -44,11 +46,19 @@ export function FileRow({
   }
 
   const handleRowClick = (e: React.MouseEvent) => {
-    if (e.ctrlKey || e.metaKey) {
+    if (e.shiftKey) {
+      // Shift+click to select range
+      if (paneState.rangeStart !== null) {
+        selectRange(paneId, paneState.rangeStart, index);
+      } else {
+        selectRange(paneId, paneState.cursor, index);
+      }
+      setCursor(paneId, index);
+    } else if (e.ctrlKey || e.metaKey) {
       // Ctrl/Cmd+click to toggle selection
       toggleSelection(paneId, entry.path);
     } else {
-      // Single click positions cursor (and optionally selects)
+      // Single click positions cursor
       setCursor(paneId, index);
     }
   };

@@ -14,6 +14,7 @@ export interface PaneState {
   entries: FileEntry[];
   selected: Set<string>;
   cursor: number;
+  rangeStart: number | null;
   loading: boolean;
   error: string | null;
   renameMode: RenameMode;
@@ -30,6 +31,7 @@ export interface FileManagerState {
   refresh: (pane: PaneId) => Promise<void>;
   setCursor: (pane: PaneId, index: number) => void;
   toggleSelection: (pane: PaneId, path: string) => void;
+  selectRange: (pane: PaneId, fromIndex: number, toIndex: number) => void;
   clearSelection: (pane: PaneId) => void;
 
   startCreatingFolder: (pane: PaneId) => void;
@@ -50,6 +52,7 @@ const defaultPaneState = (path: string): PaneState => ({
   entries: [],
   selected: new Set(),
   cursor: 0,
+  rangeStart: null,
   loading: false,
   error: null,
   renameMode: null,
@@ -161,6 +164,35 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
           [pane]: {
             ...paneState,
             selected: newSelected,
+            rangeStart: paneState.cursor,
+          },
+        },
+      };
+    });
+  },
+
+  selectRange: (pane, fromIndex, toIndex) => {
+    const start = Math.min(fromIndex, toIndex);
+    const end = Math.max(fromIndex, toIndex);
+
+    set((state) => {
+      const paneState = state.panes[pane];
+      const newSelected = new Set<string>();
+
+      for (let i = start; i <= end; i++) {
+        const entry = paneState.entries[i];
+        if (entry) {
+          newSelected.add(entry.path);
+        }
+      }
+
+      return {
+        panes: {
+          ...state.panes,
+          [pane]: {
+            ...paneState,
+            selected: newSelected,
+            rangeStart: fromIndex,
           },
         },
       };
@@ -174,6 +206,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         [pane]: {
           ...state.panes[pane],
           selected: new Set(),
+          rangeStart: null,
         },
       },
     }));
