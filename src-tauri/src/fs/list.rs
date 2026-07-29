@@ -3,16 +3,32 @@ use crate::fs::entry::{build_entry, FileEntry};
 use crate::fs::paths::is_hidden;
 use std::path::Path;
 
-pub fn count_dir_items(dir_path: &Path) -> Result<u64, FsError> {
+pub fn calculate_dir_size(dir_path: &Path) -> Result<u64, FsError> {
     if !dir_path.is_dir() {
         return Ok(0);
     }
 
-    let count = std::fs::read_dir(dir_path)?
-        .filter_map(|entry| entry.ok())
-        .count() as u64;
+    let mut total_size = 0u64;
 
-    Ok(count)
+    fn sum_dir_size(path: &Path, total: &mut u64) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+            let metadata = entry.metadata()?;
+
+            if metadata.is_file() {
+                *total += metadata.len();
+            } else if metadata.is_dir() {
+                sum_dir_size(&path, total)?;
+            }
+        }
+        Ok(())
+    }
+
+    sum_dir_size(dir_path, &mut total_size)
+        .map_err(|e| FsError::Io(format!("Failed to calculate directory size: {}", e)))?;
+
+    Ok(total_size)
 }
 
 pub fn read_dir_entries(dir_path: &Path) -> Result<Vec<FileEntry>, FsError> {
