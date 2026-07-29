@@ -38,6 +38,8 @@ export function useGlobalKeyboard() {
           const delta = e.key === "ArrowDown" ? 1 : -1;
           const newCursor = paneState.cursor + delta;
 
+          console.log(`Arrow${e.key === "ArrowDown" ? "Down" : "Up"}: cursor ${paneState.cursor} -> ${newCursor}, max: ${paneState.entries.length}`);
+
           if (e.shiftKey) {
             // Shift+Arrow to select range
             const rangeStart = paneState.rangeStart ?? paneState.cursor;

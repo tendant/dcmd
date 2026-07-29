@@ -17,6 +17,7 @@ export function App() {
         console.log("✓ Got start directory:", startDir);
       } catch (err) {
         console.error("✗ Could not get home directory, falling back to /:", err);
+        startDir = "/";
       }
 
       try {
@@ -35,7 +36,9 @@ export function App() {
       }
     };
 
-    initializePanes();
+    // Wait a bit for Tauri to be ready before initializing
+    const timer = setTimeout(initializePanes, 100);
+    return () => clearTimeout(timer);
   }, []);
 
   return <DualPaneLayout />;

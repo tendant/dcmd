@@ -1,5 +1,18 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type { FileEntry } from "../types/fileEntry";
+
+// Wrapper to handle cases where Tauri might not be ready
+const invoke = async <T,>(command: string, args?: any): Promise<T> => {
+  try {
+    return await tauriInvoke<T>(command, args);
+  } catch (err: any) {
+    // If Tauri isn't ready, throw a more helpful error
+    if (err?.message?.includes("invoke") || err?.message?.includes("undefined")) {
+      throw new Error(`Tauri command '${command}' failed - Tauri runtime may not be ready yet. ${err?.message}`);
+    }
+    throw err;
+  }
+};
 
 export const listDirectory = (path: string): Promise<FileEntry[]> =>
   invoke<FileEntry[]>("list_directory", { path });
