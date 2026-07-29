@@ -29,8 +29,8 @@ export function Pane({ paneId }: PaneProps) {
       <PathBar path={paneState.path} paneId={paneId} isEditing={paneState.isEditingPath} />
 
       {paneState.error && (
-        <div className="bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-100 px-3 py-2 text-sm">
-          {paneState.error}
+        <div className="bg-red-200 dark:bg-red-800 text-red-900 dark:text-red-100 px-3 py-2 text-sm font-semibold border-b-2 border-red-400">
+          Error: {paneState.error}
         </div>
       )}
 

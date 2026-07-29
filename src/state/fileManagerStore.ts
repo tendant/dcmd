@@ -97,9 +97,23 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         },
       }));
     } catch (err) {
-      const message = typeof err === "object" && err !== null && "message" in err
-        ? String((err as { message: string }).message)
-        : String(err);
+      let message = "Unknown error";
+
+      if (err && typeof err === "object") {
+        // Handle Rust error response from Tauri (e.g., {kind: "...", message: "..."})
+        if ("message" in err) {
+          message = String((err as any).message);
+        } else {
+          message = JSON.stringify(err);
+        }
+      } else if (err instanceof Error) {
+        message = err.message;
+      } else {
+        message = String(err);
+      }
+
+      console.error(`Navigate to ${path} failed:`, message);
+
       set((state) => ({
         panes: {
           ...state.panes,
@@ -245,9 +259,15 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       state.cancelInlineEdit(pane);
       await state.refresh(pane);
     } catch (err) {
-      const message = typeof err === "object" && err !== null && "message" in err
-        ? String((err as { message: string }).message)
-        : String(err);
+      let message = "Failed to create folder";
+      if (err && typeof err === "object" && "message" in err) {
+        message = String((err as any).message);
+      } else if (err instanceof Error) {
+        message = err.message;
+      }
+
+      console.error("Mkdir failed:", message);
+
       set((state) => ({
         panes: {
           ...state.panes,
