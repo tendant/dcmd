@@ -30,29 +30,21 @@ export function useGlobalKeyboard() {
           break;
         }
 
-        case "ArrowDown": {
-          e.preventDefault();
-          const pane = store.activePane;
-          const cursor = store.panes[pane].cursor;
-          store.setCursor(pane, cursor + 1);
-          break;
-        }
-
-        case "ArrowUp": {
-          e.preventDefault();
-          const pane = store.activePane;
-          const cursor = store.panes[pane].cursor;
-          store.setCursor(pane, cursor - 1);
-          break;
-        }
-
         case "ArrowDown":
         case "ArrowUp": {
           e.preventDefault();
           const pane = store.activePane;
-          const cursor = store.panes[pane].cursor;
+          const paneState = store.panes[pane];
           const delta = e.key === "ArrowDown" ? 1 : -1;
-          store.setCursor(pane, cursor + delta);
+          const newCursor = paneState.cursor + delta;
+
+          if (e.shiftKey) {
+            // Shift+Arrow to select range
+            const rangeStart = paneState.rangeStart ?? paneState.cursor;
+            store.selectRange(pane, rangeStart, newCursor);
+          }
+
+          store.setCursor(pane, newCursor);
           break;
         }
 
