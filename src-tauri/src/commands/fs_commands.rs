@@ -1,7 +1,10 @@
 use crate::error::FsError;
 use crate::fs::{self, FileEntry};
 use crate::operations;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 #[tauri::command]
 pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, FsError> {
@@ -36,6 +39,49 @@ pub async fn default_start_dir() -> Result<String, FsError> {
     })
     .await
     .map_err(|e| FsError::Io(format!("task join error: {e}")))?
+}
+
+/// Cancellation flags for in-flight directory size walks, keyed by path.
+#[derive(Default)]
+pub struct SizeCalculations(Mutex<HashMap<String, Arc<AtomicBool>>>);
+
+/// Recursively sums the size of a directory's contents. This can be very slow on
+/// large trees, so it is only ever invoked on explicit user request (Space) and
+/// is cancellable via `cancel_directory_size`.
+#[tauri::command]
+pub async fn directory_size(
+    path: String,
+    state: tauri::State<'_, SizeCalculations>,
+) -> Result<u64, FsError> {
+    let cancel = Arc::new(AtomicBool::new(false));
+    // Register before spawning so a cancel arriving immediately still lands.
+    state
+        .0
+        .lock()
+        .unwrap()
+        .insert(path.clone(), Arc::clone(&cancel));
+
+    let dir = PathBuf::from(&path);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        fs::calculate_dir_size_cancellable(&dir, &cancel)
+    })
+    .await
+    .map_err(|e| FsError::Io(format!("task join error: {e}")))?;
+
+    state.0.lock().unwrap().remove(&path);
+    result
+}
+
+/// Signals an in-flight `directory_size` walk to stop. No-op if none is running.
+#[tauri::command]
+pub async fn cancel_directory_size(
+    path: String,
+    state: tauri::State<'_, SizeCalculations>,
+) -> Result<(), FsError> {
+    if let Some(flag) = state.0.lock().unwrap().get(&path) {
+        flag.store(true, Ordering::Relaxed);
+    }
+    Ok(())
 }
 
 #[tauri::command]

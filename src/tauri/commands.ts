@@ -1,17 +1,21 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type { FileEntry } from "../types/fileEntry";
 
-// Wrapper to handle cases where Tauri might not be ready
+// Tauri v2 injects __TAURI_INTERNALS__ into the webview it creates. If this is
+// undefined, the page is being viewed outside the Tauri window (e.g. a browser
+// tab open on the dev server) and no command can ever succeed there.
+export function isTauriWebview(): boolean {
+  return typeof (window as any).__TAURI_INTERNALS__ !== "undefined";
+}
+
 const invoke = async <T,>(command: string, args?: any): Promise<T> => {
-  try {
-    return await tauriInvoke<T>(command, args);
-  } catch (err: any) {
-    // If Tauri isn't ready, throw a more helpful error
-    if (err?.message?.includes("invoke") || err?.message?.includes("undefined")) {
-      throw new Error(`Tauri command '${command}' failed - Tauri runtime may not be ready yet. ${err?.message}`);
-    }
-    throw err;
+  if (!isTauriWebview()) {
+    throw new Error(
+      `Not running inside the Tauri webview — '${command}' is unavailable. ` +
+        `Open the window launched by \`pnpm tauri dev\`, not localhost:1420 in a browser.`,
+    );
   }
+  return tauriInvoke<T>(command, args);
 };
 
 export const listDirectory = (path: string): Promise<FileEntry[]> =>
@@ -19,6 +23,12 @@ export const listDirectory = (path: string): Promise<FileEntry[]> =>
 
 export const defaultStartDir = (): Promise<string> =>
   invoke<string>("default_start_dir");
+
+export const directorySize = (path: string): Promise<number> =>
+  invoke<number>("directory_size", { path });
+
+export const cancelDirectorySize = (path: string): Promise<void> =>
+  invoke<void>("cancel_directory_size", { path });
 
 export const mkdir = (parentDir: string, name: string): Promise<FileEntry> =>
   invoke<FileEntry>("mkdir", { parentDir, name });

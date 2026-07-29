@@ -2,31 +2,47 @@ use crate::error::FsError;
 use crate::fs::entry::{build_entry, FileEntry};
 use crate::fs::paths::is_hidden;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-pub fn calculate_dir_size(dir_path: &Path) -> Result<u64, FsError> {
+/// Recursively sums file sizes under `dir_path`, aborting promptly if `cancel`
+/// is set. Walks of large trees can run for minutes, so every caller that can
+/// be triggered by a user should pass a flag it is able to set.
+pub fn calculate_dir_size_cancellable(
+    dir_path: &Path,
+    cancel: &AtomicBool,
+) -> Result<u64, FsError> {
     if !dir_path.is_dir() {
         return Ok(0);
     }
 
     let mut total_size = 0u64;
 
-    fn sum_dir_size(path: &Path, total: &mut u64) -> std::io::Result<()> {
+    fn sum_dir_size(path: &Path, total: &mut u64, cancel: &AtomicBool) -> Result<(), FsError> {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(FsError::Cancelled("size calculation cancelled".into()));
+        }
+
         for entry in std::fs::read_dir(path)? {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(FsError::Cancelled("size calculation cancelled".into()));
+            }
+
             let entry = entry?;
             let path = entry.path();
-            let metadata = entry.metadata()?;
+            // Use symlink_metadata so symlinked directories are not followed;
+            // following them can double-count or loop on cyclic links.
+            let metadata = entry.path().symlink_metadata()?;
 
             if metadata.is_file() {
                 *total += metadata.len();
             } else if metadata.is_dir() {
-                sum_dir_size(&path, total)?;
+                sum_dir_size(&path, total, cancel)?;
             }
         }
         Ok(())
     }
 
-    sum_dir_size(dir_path, &mut total_size)
-        .map_err(|e| FsError::Io(format!("Failed to calculate directory size: {}", e)))?;
+    sum_dir_size(dir_path, &mut total_size, cancel)?;
 
     Ok(total_size)
 }
@@ -128,5 +144,82 @@ mod tests {
         // Then files, sorted alphabetically
         assert_eq!(entries[2].name, "a_file.txt");
         assert_eq!(entries[3].name, "z_file.txt");
+    }
+}
+
+#[cfg(test)]
+mod size_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn uncancelled() -> AtomicBool {
+        AtomicBool::new(false)
+    }
+
+    #[test]
+    fn sums_sizes_recursively() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::write(temp_dir.path().join("a.txt"), "12345").unwrap();
+        let nested = temp_dir.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join("b.txt"), "678").unwrap();
+
+        let total = calculate_dir_size_cancellable(temp_dir.path(), &uncancelled()).unwrap();
+        assert_eq!(total, 8);
+    }
+
+    #[test]
+    fn returns_cancelled_when_flag_is_set() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::write(temp_dir.path().join("a.txt"), "12345").unwrap();
+
+        let cancel = AtomicBool::new(true);
+        let result = calculate_dir_size_cancellable(temp_dir.path(), &cancel);
+        assert!(
+            matches!(result, Err(FsError::Cancelled(_))),
+            "expected Cancelled, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn cancels_partway_through_a_wide_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        for i in 0..500 {
+            fs::write(temp_dir.path().join(format!("f{i}.txt")), "x").unwrap();
+        }
+
+        // Setting the flag mid-walk must abort rather than run to completion.
+        let cancel = AtomicBool::new(false);
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                cancel.store(true, Ordering::Relaxed);
+            });
+            // Either it finished before the flag landed, or it reports Cancelled;
+            // what must never happen is a hang or a wrong total.
+            match calculate_dir_size_cancellable(temp_dir.path(), &cancel) {
+                Ok(total) => assert_eq!(total, 500),
+                Err(FsError::Cancelled(_)) => {}
+                Err(other) => panic!("unexpected error: {other:?}"),
+            }
+        });
+    }
+
+    #[test]
+    fn listing_reports_item_count_without_walking_subtree() {
+        let temp_dir = TempDir::new().unwrap();
+        let dir = temp_dir.path().join("d");
+        fs::create_dir(&dir).unwrap();
+        fs::write(dir.join("one.txt"), "a").unwrap();
+        fs::write(dir.join("two.txt"), "b").unwrap();
+        fs::create_dir(dir.join("three")).unwrap();
+
+        let entries = read_dir_entries(temp_dir.path()).unwrap();
+        let d = entries.iter().find(|e| e.name == "d").unwrap();
+
+        assert_eq!(d.item_count, Some(3));
+        // Directory byte size is opt-in; listing must not compute it.
+        assert_eq!(d.size, None);
     }
 }

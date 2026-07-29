@@ -19,6 +19,12 @@ export interface PaneState {
   error: string | null;
   renameMode: RenameMode;
   isEditingPath: boolean;
+  /**
+   * Directory sizes computed on demand (Space), keyed by path. Directory sizes
+   * are never computed during listing — see `directory_size` in the backend.
+   * A value of "pending" means a computation is in flight.
+   */
+  dirSizes: Record<string, number | "pending" | "error">;
 }
 
 export interface FileManagerState {
@@ -31,6 +37,9 @@ export interface FileManagerState {
   refresh: (pane: PaneId) => Promise<void>;
   setCursor: (pane: PaneId, index: number) => void;
   toggleSelection: (pane: PaneId, path: string) => void;
+  computeDirSize: (pane: PaneId, path: string) => Promise<void>;
+  cancelDirSize: (pane: PaneId, path: string) => void;
+  cancelAllDirSizes: (pane: PaneId) => void;
   selectRange: (pane: PaneId, fromIndex: number, toIndex: number) => void;
   clearSelection: (pane: PaneId) => void;
 
@@ -57,6 +66,7 @@ const defaultPaneState = (path: string): PaneState => ({
   error: null,
   renameMode: null,
   isEditingPath: false,
+  dirSizes: {},
 });
 
 export const useFileManagerStore = create<FileManagerState>((set, get) => ({
@@ -69,6 +79,10 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   setActivePane: (pane) => set({ activePane: pane }),
 
   navigate: async (pane, path) => {
+    // Abandoning the listing abandons its size walks; stop them server-side too
+    // rather than letting them run on for minutes against a directory we left.
+    get().cancelAllDirSizes(pane);
+
     set((state) => ({
       panes: {
         ...state.panes,
@@ -80,6 +94,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
           cursor: 0,
           selected: new Set(),
           renameMode: null,
+          dirSizes: {},
         },
       },
     }));
@@ -163,6 +178,66 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         },
       };
     });
+  },
+
+  computeDirSize: async (pane, path) => {
+    const setSize = (value: number | "pending" | "error") =>
+      set((state) => ({
+        panes: {
+          ...state.panes,
+          [pane]: {
+            ...state.panes[pane],
+            dirSizes: { ...state.panes[pane].dirSizes, [path]: value },
+          },
+        },
+      }));
+
+    const clearSize = () =>
+      set((state) => {
+        const { [path]: _dropped, ...rest } = state.panes[pane].dirSizes;
+        return {
+          panes: {
+            ...state.panes,
+            [pane]: { ...state.panes[pane], dirSizes: rest },
+          },
+        };
+      });
+
+    // Already computed or in flight — don't kick off a second expensive walk.
+    const existing = get().panes[pane].dirSizes[path];
+    if (existing !== undefined) return;
+
+    setSize("pending");
+    try {
+      setSize(await commands.directorySize(path));
+    } catch (err) {
+      // A cancelled walk is a user action, not a failure: drop the entry so the
+      // row falls back to showing its item count.
+      if (err && typeof err === "object" && (err as any).kind === "cancelled") {
+        clearSize();
+        return;
+      }
+      console.error(`Failed to compute size of ${path}:`, err);
+      setSize("error");
+    }
+  },
+
+  cancelDirSize: (pane, path) => {
+    if (get().panes[pane].dirSizes[path] !== "pending") return;
+    commands.cancelDirectorySize(path).catch((err) => {
+      console.error(`Failed to cancel size calculation for ${path}:`, err);
+    });
+  },
+
+  cancelAllDirSizes: (pane) => {
+    const { dirSizes } = get().panes[pane];
+    for (const [path, value] of Object.entries(dirSizes)) {
+      if (value === "pending") {
+        commands.cancelDirectorySize(path).catch((err) => {
+          console.error(`Failed to cancel size calculation for ${path}:`, err);
+        });
+      }
+    }
   },
 
   toggleSelection: (pane, path) => {

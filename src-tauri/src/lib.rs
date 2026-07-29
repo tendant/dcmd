@@ -7,9 +7,12 @@ mod operations;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(commands::SizeCalculations::default())
         .invoke_handler(tauri::generate_handler![
             commands::list_directory,
             commands::default_start_dir,
+            commands::directory_size,
+            commands::cancel_directory_size,
             commands::mkdir,
             commands::rename,
             commands::copy_entries,

@@ -15,6 +15,9 @@ pub struct FileEntry {
     pub path: String,
     pub kind: EntryKind,
     pub size: Option<u64>,
+    /// Number of direct children, for directories only. Cheap to compute (one
+    /// non-recursive read_dir); the recursive byte size is opt-in via Space.
+    pub item_count: Option<u64>,
     pub modified_at: Option<i64>,
     pub hidden: bool,
 }
@@ -28,11 +31,20 @@ pub fn build_entry(path: &std::path::Path, name: String, metadata: &std::fs::Met
         EntryKind::File
     };
 
+    // Directory sizes are deliberately NOT computed here. Doing so recursively
+    // walks the whole subtree for every entry, which makes listing a home
+    // directory walk millions of files before returning anything. The frontend
+    // requests a directory's size on demand via the `directory_size` command.
     let size = if metadata.is_file() {
         Some(metadata.len())
-    } else if metadata.is_dir() {
-        // For directories, calculate total size recursively
-        crate::fs::calculate_dir_size(path).ok()
+    } else {
+        None
+    };
+
+    // One shallow read_dir, not a recursive walk. Unreadable directories (e.g.
+    // permission denied) simply report no count rather than failing the listing.
+    let item_count = if metadata.is_dir() {
+        std::fs::read_dir(path).map(|rd| rd.count() as u64).ok()
     } else {
         None
     };
@@ -48,6 +60,7 @@ pub fn build_entry(path: &std::path::Path, name: String, metadata: &std::fs::Met
         path: path.to_string_lossy().to_string(),
         kind,
         size,
+        item_count,
         modified_at,
         hidden,
     })
@@ -71,6 +84,7 @@ mod tests {
             path: "/tmp/test.txt".to_string(),
             kind: EntryKind::File,
             size: Some(1024),
+            item_count: None,
             modified_at: Some(1000000),
             hidden: false,
         };

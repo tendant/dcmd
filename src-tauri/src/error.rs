@@ -19,6 +19,8 @@ pub enum FsError {
     Trash(String),
     #[error("io error: {0}")]
     Io(String),
+    #[error("cancelled: {0}")]
+    Cancelled(String),
 }
 
 impl From<io::Error> for FsError {
@@ -29,5 +31,16 @@ impl From<io::Error> for FsError {
             io::ErrorKind::PermissionDenied => FsError::PermissionDenied(err.to_string()),
             _ => FsError::Io(err.to_string()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancelled_serializes_to_the_kind_the_frontend_checks() {
+        let json = serde_json::to_string(&FsError::Cancelled("stopped".into())).unwrap();
+        assert_eq!(json, r#"{"kind":"cancelled","message":"stopped"}"#);
     }
 }

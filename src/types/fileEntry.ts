@@ -5,6 +5,8 @@ export interface FileEntry {
   path: string;
   kind: EntryKind;
   size: number | null;
+  /** Direct child count, directories only. Recursive byte size is opt-in (Space). */
+  itemCount: number | null;
   modifiedAt: number | null;
   hidden: boolean;
 }

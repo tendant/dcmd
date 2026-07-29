@@ -76,6 +76,22 @@ export function FileRow({
     // TODO: implement file opening with default application
   };
 
+  // Files show their byte size. Directories show their item count until the
+  // user presses Space, which computes the (expensive) recursive total size.
+  let sizeLabel = "";
+  if (entry.kind === "directory") {
+    const computed = paneState.dirSizes[entry.path];
+    if (computed === "pending") {
+      sizeLabel = "…";
+    } else if (typeof computed === "number") {
+      sizeLabel = formatBytes(computed);
+    } else if (entry.itemCount !== null) {
+      sizeLabel = `${entry.itemCount} item${entry.itemCount === 1 ? "" : "s"}`;
+    }
+  } else if (entry.size !== null) {
+    sizeLabel = formatBytes(entry.size);
+  }
+
   const icon = isParentDirectory
     ? "⬆️"
     : entry.kind === "directory"
@@ -100,9 +116,9 @@ export function FileRow({
     >
       <span className="mr-2">{icon}</span>
       <span className="flex-1 truncate">{entry.name}</span>
-      {!isParentDirectory && entry.size !== null && (
+      {!isParentDirectory && (
         <span className="ml-2 text-gray-500 dark:text-gray-400 text-xs min-w-[60px] text-right">
-          {formatBytes(entry.size)}
+          {sizeLabel}
         </span>
       )}
     </div>

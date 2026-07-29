@@ -74,6 +74,13 @@ export function useGlobalKeyboard() {
           break;
         }
 
+        case "Escape": {
+          // Escape aborts any directory size walks still running in this pane.
+          e.preventDefault();
+          store.cancelAllDirSizes(store.activePane);
+          break;
+        }
+
         case " ": {
           e.preventDefault();
           const pane = store.activePane;
@@ -83,6 +90,15 @@ export function useGlobalKeyboard() {
             const entry = paneState.entries[paneState.cursor - 1];
             if (entry) {
               store.toggleSelection(pane, entry.path);
+              // Directory sizes are expensive, so Space is the only trigger.
+              // Pressing it again on a running calculation cancels it.
+              if (entry.kind === "directory") {
+                if (paneState.dirSizes[entry.path] === "pending") {
+                  store.cancelDirSize(pane, entry.path);
+                } else {
+                  store.computeDirSize(pane, entry.path);
+                }
+              }
             }
           }
           break;

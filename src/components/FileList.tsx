@@ -20,6 +20,7 @@ const PARENT_ENTRY: FileEntry = {
   path: "",
   kind: "directory",
   size: null,
+  itemCount: null,
   modifiedAt: null,
   hidden: false,
 };
