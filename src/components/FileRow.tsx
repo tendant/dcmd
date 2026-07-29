@@ -73,6 +73,7 @@ export function FileRow({
       // Double-click navigates into directories
       navigate(paneId, entry.path);
     }
+    // TODO: implement file opening with default application
   };
 
   const icon = isParentDirectory
