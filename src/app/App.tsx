@@ -11,13 +11,26 @@ export function App() {
     const initializePanes = async () => {
       console.log("Initializing panes...");
       let startDir = "/";
+      let retries = 0;
+      const maxRetries = 5;
 
-      try {
-        startDir = await commands.defaultStartDir();
-        console.log("✓ Got start directory:", startDir);
-      } catch (err) {
-        console.error("✗ Could not get home directory, falling back to /:", err);
-        startDir = "/";
+      // Retry getting home directory in case Tauri isn't ready
+      while (retries < maxRetries) {
+        try {
+          startDir = await commands.defaultStartDir();
+          console.log("✓ Got start directory:", startDir);
+          break;
+        } catch (err) {
+          retries++;
+          console.warn(`✗ Attempt ${retries}/${maxRetries} failed to get home directory:`, err);
+          if (retries >= maxRetries) {
+            console.error("✗ Could not get home directory after retries, using /");
+            startDir = "/";
+          } else {
+            // Wait before retrying
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
       }
 
       try {
@@ -36,8 +49,8 @@ export function App() {
       }
     };
 
-    // Wait a bit for Tauri to be ready before initializing
-    const timer = setTimeout(initializePanes, 100);
+    // Wait for Tauri to be ready before initializing
+    const timer = setTimeout(initializePanes, 500);
     return () => clearTimeout(timer);
   }, []);
 
