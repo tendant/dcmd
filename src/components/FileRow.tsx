@@ -77,10 +77,14 @@ export function FileRow({
     <div
       onClick={handleRowClick}
       onDoubleClick={handleDoubleClick}
-      className={`flex items-center px-2 py-1 text-sm font-mono border-l-2 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-800 ${
-        isSelected ? "bg-blue-200 dark:bg-blue-900" : ""
-      } ${isCursor ? "border-l-blue-500 bg-blue-50 dark:bg-blue-900" : "border-l-transparent"} ${
-        isParentDirectory ? "font-semibold text-amber-700 dark:text-amber-400" : entry.hidden ? "text-gray-400" : "text-gray-900 dark:text-gray-100"
+      className={`flex items-center px-2 py-1 text-sm font-mono border-l-4 cursor-pointer select-none transition-colors ${
+        isCursor
+          ? "border-l-blue-600 bg-blue-200 dark:bg-blue-800 font-semibold text-gray-900 dark:text-gray-100"
+          : isSelected
+            ? "border-l-blue-400 bg-blue-100 dark:bg-blue-900 text-gray-900 dark:text-gray-100"
+            : "border-l-transparent hover:bg-gray-100 dark:hover:bg-gray-800"
+      } ${
+        isParentDirectory ? "text-amber-700 dark:text-amber-400" : entry.hidden ? "text-gray-400" : "text-gray-900 dark:text-gray-100"
       }`}
     >
       <span className="mr-2">{icon}</span>
