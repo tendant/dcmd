@@ -52,7 +52,9 @@ export function useGlobalKeyboard() {
           e.preventDefault();
           const pane = store.activePane;
           const paneState = store.panes[pane];
-          const entry = paneState.entries[paneState.cursor];
+          // Account for synthetic ".." entry at index 0
+          const entryIndex = paneState.cursor - 1;
+          const entry = paneState.entries[entryIndex];
           if (entry && entry.kind === "directory") {
             store.navigate(pane, entry.path);
           }
@@ -70,7 +72,9 @@ export function useGlobalKeyboard() {
           e.preventDefault();
           const pane = store.activePane;
           const paneState = store.panes[pane];
-          const entry = paneState.entries[paneState.cursor];
+          // Account for synthetic ".." entry at index 0
+          const entryIndex = paneState.cursor - 1;
+          const entry = paneState.entries[entryIndex];
           if (entry) {
             store.toggleSelection(pane, entry.path);
           }
@@ -81,7 +85,9 @@ export function useGlobalKeyboard() {
           e.preventDefault();
           const pane = store.activePane;
           const paneState = store.panes[pane];
-          const entry = paneState.entries[paneState.cursor];
+          // Account for synthetic ".." entry at index 0
+          const entryIndex = paneState.cursor - 1;
+          const entry = paneState.entries[entryIndex];
           if (entry) {
             store.startRenaming(pane, entry.path);
           }
