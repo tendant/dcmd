@@ -60,8 +60,10 @@ export function useGlobalKeyboard() {
             store.goToParent(pane);
           } else {
             const entry = paneState.entries[paneState.cursor - 1];
-            if (entry && entry.kind === "directory") {
+            if (entry?.kind === "directory") {
               store.navigate(pane, entry.path);
+            } else if (entry) {
+              store.openEntry(pane, entry.path);
             }
           }
           break;

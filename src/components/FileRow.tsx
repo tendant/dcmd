@@ -28,6 +28,7 @@ export function FileRow({
   const commitRename = useFileManagerStore((s) => s.commitRename);
   const navigate = useFileManagerStore((s) => s.navigate);
   const goToParent = useFileManagerStore((s) => s.goToParent);
+  const openEntry = useFileManagerStore((s) => s.openEntry);
 
   if (isRenaming) {
     return (
@@ -72,8 +73,10 @@ export function FileRow({
     } else if (entry.kind === "directory") {
       // Double-click navigates into directories
       navigate(paneId, entry.path);
+    } else {
+      // Files open in whatever application the OS has associated with them
+      openEntry(paneId, entry.path);
     }
-    // TODO: implement file opening with default application
   };
 
   // Files show their byte size. Directories show their item count until the

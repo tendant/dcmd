@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { openPath } from "@tauri-apps/plugin-opener";
 import type { FileEntry } from "../types/fileEntry";
 import * as commands from "../tauri/commands";
 
@@ -37,6 +38,7 @@ export interface FileManagerState {
   refresh: (pane: PaneId) => Promise<void>;
   setCursor: (pane: PaneId, index: number) => void;
   toggleSelection: (pane: PaneId, path: string) => void;
+  openEntry: (pane: PaneId, path: string) => Promise<void>;
   computeDirSize: (pane: PaneId, path: string) => Promise<void>;
   cancelDirSize: (pane: PaneId, path: string) => void;
   cancelAllDirSizes: (pane: PaneId) => void;
@@ -178,6 +180,24 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         },
       };
     });
+  },
+
+  openEntry: async (pane, path) => {
+    try {
+      await openPath(path);
+    } catch (err) {
+      const message =
+        err && typeof err === "object" && "message" in err
+          ? String((err as any).message)
+          : String(err);
+      console.error(`Failed to open ${path}:`, message);
+      set((state) => ({
+        panes: {
+          ...state.panes,
+          [pane]: { ...state.panes[pane], error: `Could not open file: ${message}` },
+        },
+      }));
+    }
   },
 
   computeDirSize: async (pane, path) => {
