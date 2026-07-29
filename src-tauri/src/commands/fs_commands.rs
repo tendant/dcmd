@@ -14,10 +14,25 @@ pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, FsError> {
 #[tauri::command]
 pub async fn default_start_dir() -> Result<String, FsError> {
     tauri::async_runtime::spawn_blocking(|| {
-        std::env::var_os("HOME")
-            .or_else(|| std::env::var_os("USERPROFILE"))
-            .and_then(|h| h.into_string().ok())
-            .ok_or_else(|| FsError::Io("could not determine home directory".to_string()))
+        // Try HOME first (macOS/Linux)
+        if let Ok(home) = std::env::var("HOME") {
+            if !home.is_empty() {
+                return Ok(home);
+            }
+        }
+
+        // Try USERPROFILE (Windows)
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            if !profile.is_empty() {
+                return Ok(profile);
+            }
+        }
+
+        // Fallback to current directory
+        match std::env::current_dir() {
+            Ok(path) => Ok(path.to_string_lossy().to_string()),
+            Err(_) => Ok("/".to_string()),
+        }
     })
     .await
     .map_err(|e| FsError::Io(format!("task join error: {e}")))?

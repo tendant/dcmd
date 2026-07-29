@@ -9,13 +9,21 @@ export function App() {
 
   useEffect(() => {
     const initializePanes = async () => {
+      let startDir = "/";
       try {
-        const startDir = await commands.defaultStartDir();
+        startDir = await commands.defaultStartDir();
+        console.log("Starting directory:", startDir);
+      } catch (err) {
+        console.warn("Could not get home directory, using /:", err);
+        // Fall back to root if home dir fails
+      }
+
+      try {
         const store = useFileManagerStore.getState();
         await store.navigate("left", startDir);
         await store.navigate("right", startDir);
       } catch (err) {
-        console.error("Failed to initialize panes:", err);
+        console.error("Failed to navigate to start directory:", err);
       }
     };
 
