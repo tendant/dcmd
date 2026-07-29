@@ -43,9 +43,9 @@ export function FileList({
     overscan: 10,
   });
 
-  // Auto-scroll to cursor
+  // Auto-scroll to cursor only if out of view
   useEffect(() => {
-    virtualizer.scrollToIndex(cursor, { align: "center" });
+    virtualizer.scrollToIndex(cursor, { align: "auto" });
   }, [cursor, virtualizer]);
 
   const virtualItems = virtualizer.getVirtualItems();
