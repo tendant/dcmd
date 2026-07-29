@@ -24,6 +24,9 @@ export const listDirectory = (path: string): Promise<FileEntry[]> =>
 export const defaultStartDir = (): Promise<string> =>
   invoke<string>("default_start_dir");
 
+export const openEntry = (path: string): Promise<void> =>
+  invoke<void>("open_entry", { path });
+
 export const directorySize = (path: string): Promise<number> =>
   invoke<number>("directory_size", { path });
 

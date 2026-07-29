@@ -665,6 +665,7 @@ dependencies = [
 name = "dcmd"
 version = "0.1.0"
 dependencies = [
+ "open",
  "serde",
  "serde_json",
  "tauri",

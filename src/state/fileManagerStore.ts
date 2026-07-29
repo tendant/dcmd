@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { openPath } from "@tauri-apps/plugin-opener";
 import type { FileEntry } from "../types/fileEntry";
 import * as commands from "../tauri/commands";
 
@@ -184,7 +183,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
 
   openEntry: async (pane, path) => {
     try {
-      await openPath(path);
+      await commands.openEntry(path);
     } catch (err) {
       const message =
         err && typeof err === "object" && "message" in err

@@ -41,6 +41,42 @@ pub async fn default_start_dir() -> Result<String, FsError> {
     .map_err(|e| FsError::Io(format!("task join error: {e}")))?
 }
 
+/// Opens a path with the OS default application.
+///
+/// This calls the opener plugin's Rust API rather than exposing its JS command.
+/// The JS command enforces a capability path scope meant to stop web content
+/// reaching arbitrary files; for a file manager that scope is the wrong layer —
+/// it rejected any path with a dot-prefixed component (`~/.config/foo`) unless
+/// globally disabled. Opening is instead gated here, where the path always came
+/// from the user selecting a row in a directory they had already navigated to.
+#[tauri::command]
+pub async fn open_entry(path: String) -> Result<(), FsError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let file = PathBuf::from(&path);
+        if !file.exists() {
+            return Err(FsError::NotFound(path));
+        }
+
+        // `open::that` waits for the launcher and checks its exit status, unlike
+        // the plugin's detached variant which reports success even when nothing
+        // can open the file.
+        open::that(&file).map_err(|e| {
+            // A non-zero launcher exit almost always means no application is
+            // registered for the type, which is worth saying plainly.
+            if e.kind() == std::io::ErrorKind::Other {
+                FsError::Io(format!(
+                    "No application is associated with this file type ({})",
+                    file.file_name().unwrap_or_default().to_string_lossy()
+                ))
+            } else {
+                FsError::Io(format!("could not open {path}: {e}"))
+            }
+        })
+    })
+    .await
+    .map_err(|e| FsError::Io(format!("task join error: {e}")))?
+}
+
 /// Cancellation flags for in-flight directory size walks, keyed by path.
 #[derive(Default)]
 pub struct SizeCalculations(Mutex<HashMap<String, Arc<AtomicBool>>>);
