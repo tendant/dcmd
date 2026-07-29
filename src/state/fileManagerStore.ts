@@ -186,15 +186,21 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   },
 
   selectRange: (pane, fromIndex, toIndex) => {
-    const start = Math.min(fromIndex, toIndex);
-    const end = Math.max(fromIndex, toIndex);
+    let start = Math.min(fromIndex, toIndex);
+    let end = Math.max(fromIndex, toIndex);
+
+    // Adjust for synthetic ".." parent entry at index 0
+    // Parent entry (index 0) cannot be selected
+    if (start === 0) start = 1;
+    if (end === 0) end = 1;
 
     set((state) => {
       const paneState = state.panes[pane];
       const newSelected = new Set<string>();
 
+      // Convert display indices to entry indices (subtract 1 for the parent entry)
       for (let i = start; i <= end; i++) {
-        const entry = paneState.entries[i];
+        const entry = paneState.entries[i - 1];
         if (entry) {
           newSelected.add(entry.path);
         }

@@ -52,11 +52,15 @@ export function useGlobalKeyboard() {
           e.preventDefault();
           const pane = store.activePane;
           const paneState = store.panes[pane];
-          // Account for synthetic ".." entry at index 0
-          const entryIndex = paneState.cursor - 1;
-          const entry = paneState.entries[entryIndex];
-          if (entry && entry.kind === "directory") {
-            store.navigate(pane, entry.path);
+          // Cursor 0 is the synthetic ".." parent entry
+          if (paneState.cursor === 0) {
+            // Enter on ".." goes to parent
+            store.goToParent(pane);
+          } else {
+            const entry = paneState.entries[paneState.cursor - 1];
+            if (entry && entry.kind === "directory") {
+              store.navigate(pane, entry.path);
+            }
           }
           break;
         }
@@ -72,11 +76,12 @@ export function useGlobalKeyboard() {
           e.preventDefault();
           const pane = store.activePane;
           const paneState = store.panes[pane];
-          // Account for synthetic ".." entry at index 0
-          const entryIndex = paneState.cursor - 1;
-          const entry = paneState.entries[entryIndex];
-          if (entry) {
-            store.toggleSelection(pane, entry.path);
+          // Cursor 0 is the synthetic ".." parent entry, skip it
+          if (paneState.cursor > 0) {
+            const entry = paneState.entries[paneState.cursor - 1];
+            if (entry) {
+              store.toggleSelection(pane, entry.path);
+            }
           }
           break;
         }
@@ -85,11 +90,12 @@ export function useGlobalKeyboard() {
           e.preventDefault();
           const pane = store.activePane;
           const paneState = store.panes[pane];
-          // Account for synthetic ".." entry at index 0
-          const entryIndex = paneState.cursor - 1;
-          const entry = paneState.entries[entryIndex];
-          if (entry) {
-            store.startRenaming(pane, entry.path);
+          // Cursor 0 is the synthetic ".." parent entry, can't rename it
+          if (paneState.cursor > 0) {
+            const entry = paneState.entries[paneState.cursor - 1];
+            if (entry) {
+              store.startRenaming(pane, entry.path);
+            }
           }
           break;
         }
