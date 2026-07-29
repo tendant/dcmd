@@ -9,9 +9,10 @@ export function Toolbar() {
           <span>F8 Trash</span>
         </div>
         <div>
-          <span className="mr-4">Tab Switch</span>
-          <span className="mr-4">F2 Rename</span>
-          <span>↑↓ Navigate</span>
+          <span className="mr-4">Tab Pane</span>
+          <span className="mr-4">⏎ Enter Dir</span>
+          <span className="mr-4">Space Select</span>
+          <span>Double-click Open</span>
         </div>
       </div>
     </div>

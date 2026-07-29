@@ -44,16 +44,23 @@ export function FileRow({
   }
 
   const handleRowClick = (e: React.MouseEvent) => {
-    setCursor(paneId, index);
-
-    if (isParentDirectory) {
-      // Parent directory (..) - always goes up one level
-      goToParent(paneId);
-    } else if (e.ctrlKey || e.metaKey) {
+    if (e.ctrlKey || e.metaKey) {
       // Ctrl/Cmd+click to toggle selection
       toggleSelection(paneId, entry.path);
-    } else if (entry.kind === "directory" && !e.metaKey && !e.ctrlKey) {
-      // Click navigates into directories
+    } else {
+      // Single click positions cursor (and optionally selects)
+      setCursor(paneId, index);
+    }
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    if (isParentDirectory) {
+      // Double-click on .. goes up one level
+      goToParent(paneId);
+    } else if (entry.kind === "directory") {
+      // Double-click navigates into directories
       navigate(paneId, entry.path);
     }
   };
@@ -69,6 +76,7 @@ export function FileRow({
   return (
     <div
       onClick={handleRowClick}
+      onDoubleClick={handleDoubleClick}
       className={`flex items-center px-2 py-1 text-sm font-mono border-l-2 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-800 ${
         isSelected ? "bg-blue-200 dark:bg-blue-900" : ""
       } ${isCursor ? "border-l-blue-500 bg-blue-50 dark:bg-blue-900" : "border-l-transparent"} ${
