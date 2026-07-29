@@ -35,8 +35,12 @@ export function Pane({ paneId }: PaneProps) {
       )}
 
       {paneState.loading ? (
-        <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-400">
-          Loading...
+        <div className="flex-1 flex flex-col items-center justify-center text-gray-500 dark:text-gray-400 p-4">
+          <div className="text-lg mb-2">Loading...</div>
+          <div className="text-xs text-gray-400">{paneState.path}</div>
+          {paneState.error && (
+            <div className="text-red-500 text-xs mt-2 text-center">Error: {paneState.error}</div>
+          )}
         </div>
       ) : (
         <FileList

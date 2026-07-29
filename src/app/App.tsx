@@ -12,7 +12,7 @@ export function App() {
       console.log("Initializing panes...");
       let startDir = "/";
       let retries = 0;
-      const maxRetries = 5;
+      const maxRetries = 10;
 
       // Retry getting home directory in case Tauri isn't ready
       while (retries < maxRetries) {
@@ -28,7 +28,7 @@ export function App() {
             startDir = "/";
           } else {
             // Wait before retrying
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, 1000));
           }
         }
       }
@@ -50,7 +50,7 @@ export function App() {
     };
 
     // Wait for Tauri to be ready before initializing
-    const timer = setTimeout(initializePanes, 500);
+    const timer = setTimeout(initializePanes, 1000);
     return () => clearTimeout(timer);
   }, []);
 
