@@ -3,6 +3,18 @@ use crate::fs::entry::{build_entry, FileEntry};
 use crate::fs::paths::is_hidden;
 use std::path::Path;
 
+pub fn count_dir_items(dir_path: &Path) -> Result<u64, FsError> {
+    if !dir_path.is_dir() {
+        return Ok(0);
+    }
+
+    let count = std::fs::read_dir(dir_path)?
+        .filter_map(|entry| entry.ok())
+        .count() as u64;
+
+    Ok(count)
+}
+
 pub fn read_dir_entries(dir_path: &Path) -> Result<Vec<FileEntry>, FsError> {
     if !dir_path.exists() {
         return Err(FsError::NotFound(format!("path does not exist: {}", dir_path.display())));

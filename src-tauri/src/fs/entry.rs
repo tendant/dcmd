@@ -30,6 +30,15 @@ pub fn build_entry(path: &std::path::Path, name: String, metadata: &std::fs::Met
 
     let size = if metadata.is_file() {
         Some(metadata.len())
+    } else if metadata.is_dir() {
+        // For directories, store item count (we'll format as "N items" in frontend)
+        match std::fs::read_dir(path) {
+            Ok(entries) => {
+                let count = entries.filter_map(|e| e.ok()).count() as u64;
+                Some(count)
+            }
+            Err(_) => None,
+        }
     } else {
         None
     };
