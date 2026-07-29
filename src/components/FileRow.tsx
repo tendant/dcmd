@@ -8,6 +8,7 @@ interface FileRowProps {
   isSelected: boolean;
   isCursor: boolean;
   isRenaming: boolean;
+  index: number;
 }
 
 export function FileRow({
@@ -16,8 +17,10 @@ export function FileRow({
   isSelected,
   isCursor,
   isRenaming,
+  index,
 }: FileRowProps) {
   const toggleSelection = useFileManagerStore((s) => s.toggleSelection);
+  const setCursor = useFileManagerStore((s) => s.setCursor);
   const commitRename = useFileManagerStore((s) => s.commitRename);
 
   if (isRenaming) {
@@ -36,8 +39,18 @@ export function FileRow({
     );
   }
 
-  const handleRowClick = () => {
-    toggleSelection(paneId, entry.path);
+  const navigate = useFileManagerStore((s) => s.navigate);
+
+  const handleRowClick = (e: React.MouseEvent) => {
+    setCursor(paneId, index);
+
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl/Cmd+click to toggle selection
+      toggleSelection(paneId, entry.path);
+    } else if (entry.kind === "directory" && !e.metaKey && !e.ctrlKey) {
+      // Click navigates into directories
+      navigate(paneId, entry.path);
+    }
   };
 
   const icon =
@@ -50,7 +63,7 @@ export function FileRow({
   return (
     <div
       onClick={handleRowClick}
-      className={`flex items-center px-2 py-1 text-sm font-mono border-l-2 cursor-pointer select-none ${
+      className={`flex items-center px-2 py-1 text-sm font-mono border-l-2 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-800 ${
         isSelected ? "bg-blue-200 dark:bg-blue-900" : ""
       } ${isCursor ? "border-l-blue-500 bg-blue-50 dark:bg-blue-900" : "border-l-transparent"} ${
         entry.hidden ? "text-gray-400" : "text-gray-900 dark:text-gray-100"

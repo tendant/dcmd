@@ -78,6 +78,7 @@ export function FileList({
                 isSelected={selected.has(entry.path)}
                 isCursor={virtualItem.index === cursor}
                 isRenaming={isRenaming}
+                index={virtualItem.index}
               />
             </div>
           );
