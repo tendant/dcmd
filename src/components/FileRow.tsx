@@ -9,6 +9,7 @@ interface FileRowProps {
   isCursor: boolean;
   isRenaming: boolean;
   index: number;
+  isParentDirectory?: boolean;
 }
 
 export function FileRow({
@@ -18,10 +19,13 @@ export function FileRow({
   isCursor,
   isRenaming,
   index,
+  isParentDirectory = false,
 }: FileRowProps) {
   const toggleSelection = useFileManagerStore((s) => s.toggleSelection);
   const setCursor = useFileManagerStore((s) => s.setCursor);
   const commitRename = useFileManagerStore((s) => s.commitRename);
+  const navigate = useFileManagerStore((s) => s.navigate);
+  const goToParent = useFileManagerStore((s) => s.goToParent);
 
   if (isRenaming) {
     return (
@@ -39,12 +43,13 @@ export function FileRow({
     );
   }
 
-  const navigate = useFileManagerStore((s) => s.navigate);
-
   const handleRowClick = (e: React.MouseEvent) => {
     setCursor(paneId, index);
 
-    if (e.ctrlKey || e.metaKey) {
+    if (isParentDirectory) {
+      // Parent directory (..) - always goes up one level
+      goToParent(paneId);
+    } else if (e.ctrlKey || e.metaKey) {
       // Ctrl/Cmd+click to toggle selection
       toggleSelection(paneId, entry.path);
     } else if (entry.kind === "directory" && !e.metaKey && !e.ctrlKey) {
@@ -53,8 +58,9 @@ export function FileRow({
     }
   };
 
-  const icon =
-    entry.kind === "directory"
+  const icon = isParentDirectory
+    ? "⬆️"
+    : entry.kind === "directory"
       ? "📁"
       : entry.kind === "symlink"
         ? "🔗"
@@ -66,12 +72,12 @@ export function FileRow({
       className={`flex items-center px-2 py-1 text-sm font-mono border-l-2 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-800 ${
         isSelected ? "bg-blue-200 dark:bg-blue-900" : ""
       } ${isCursor ? "border-l-blue-500 bg-blue-50 dark:bg-blue-900" : "border-l-transparent"} ${
-        entry.hidden ? "text-gray-400" : "text-gray-900 dark:text-gray-100"
+        isParentDirectory ? "font-semibold text-amber-700 dark:text-amber-400" : entry.hidden ? "text-gray-400" : "text-gray-900 dark:text-gray-100"
       }`}
     >
       <span className="mr-2">{icon}</span>
       <span className="flex-1 truncate">{entry.name}</span>
-      {entry.size !== null && (
+      {!isParentDirectory && entry.size !== null && (
         <span className="ml-2 text-gray-500 dark:text-gray-400 text-xs min-w-[60px] text-right">
           {formatBytes(entry.size)}
         </span>

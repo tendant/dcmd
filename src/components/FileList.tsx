@@ -14,6 +14,16 @@ interface FileListProps {
   renameMode: any;
 }
 
+// Synthetic parent directory entry
+const PARENT_ENTRY: FileEntry = {
+  name: "..",
+  path: "",
+  kind: "directory",
+  size: null,
+  modifiedAt: null,
+  hidden: false,
+};
+
 export function FileList({
   entries,
   selected,
@@ -23,8 +33,11 @@ export function FileList({
 }: FileListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
+  // Prepend parent directory entry
+  const displayEntries = [PARENT_ENTRY, ...entries];
+
   const virtualizer = useVirtualizer({
-    count: entries.length,
+    count: displayEntries.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 10,
@@ -41,7 +54,7 @@ export function FileList({
   if (entries.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">
-        {entries.length === 0 ? "No files" : "Loading..."}
+        No files
       </div>
     );
   }
@@ -54,11 +67,13 @@ export function FileList({
     >
       <div style={{ height: `${totalSize}px`, position: "relative" }}>
         {virtualItems.map((virtualItem) => {
-          const entry = entries[virtualItem.index];
+          const entry = displayEntries[virtualItem.index];
+          const isParent = virtualItem.index === 0;
           const isRenaming =
             renameMode &&
+            !isParent &&
             ((renameMode.type === "rename" && renameMode.path === entry.path) ||
-              (renameMode.type === "creating" && virtualItem.index === entries.length - 1));
+              (renameMode.type === "creating" && virtualItem.index === displayEntries.length - 1));
 
           return (
             <div
@@ -75,10 +90,11 @@ export function FileList({
               <FileRow
                 entry={entry}
                 paneId={paneId}
-                isSelected={selected.has(entry.path)}
+                isSelected={!isParent && selected.has(entry.path)}
                 isCursor={virtualItem.index === cursor}
                 isRenaming={isRenaming}
                 index={virtualItem.index}
+                isParentDirectory={isParent}
               />
             </div>
           );
