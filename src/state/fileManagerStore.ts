@@ -17,6 +17,7 @@ export interface PaneState {
   loading: boolean;
   error: string | null;
   renameMode: RenameMode;
+  isEditingPath: boolean;
 }
 
 export interface FileManagerState {
@@ -36,6 +37,9 @@ export interface FileManagerState {
   commitMkdir: (pane: PaneId, name: string) => Promise<void>;
   commitRename: (pane: PaneId, path: string, newName: string) => Promise<void>;
   cancelInlineEdit: (pane: PaneId) => void;
+  startEditingPath: (pane: PaneId) => void;
+  commitPathEdit: (pane: PaneId, newPath: string) => Promise<void>;
+  cancelPathEdit: (pane: PaneId) => void;
   copySelection: () => Promise<void>;
   moveSelection: () => Promise<void>;
   trashSelection: (pane: PaneId) => Promise<void>;
@@ -49,6 +53,7 @@ const defaultPaneState = (path: string): PaneState => ({
   loading: false,
   error: null,
   renameMode: null,
+  isEditingPath: false,
 });
 
 export const useFileManagerStore = create<FileManagerState>((set, get) => ({
@@ -343,5 +348,35 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         },
       }));
     }
+  },
+
+  startEditingPath: (pane) => {
+    set((state) => ({
+      panes: {
+        ...state.panes,
+        [pane]: {
+          ...state.panes[pane],
+          isEditingPath: true,
+        },
+      },
+    }));
+  },
+
+  commitPathEdit: async (pane, newPath) => {
+    const state = get();
+    state.cancelPathEdit(pane);
+    await state.navigate(pane, newPath);
+  },
+
+  cancelPathEdit: (pane) => {
+    set((state) => ({
+      panes: {
+        ...state.panes,
+        [pane]: {
+          ...state.panes[pane],
+          isEditingPath: false,
+        },
+      },
+    }));
   },
 }));

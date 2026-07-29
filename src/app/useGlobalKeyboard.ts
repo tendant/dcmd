@@ -4,6 +4,16 @@ import { useFileManagerStore } from "../state/fileManagerStore";
 export function useGlobalKeyboard() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const store = useFileManagerStore.getState();
+
+      // Ctrl+L to edit path (works even in input fields for this specific case)
+      if ((e.ctrlKey || e.metaKey) && e.key === "l") {
+        e.preventDefault();
+        const pane = store.activePane;
+        store.startEditingPath(pane);
+        return;
+      }
+
       // Don't intercept when typing in inputs or textareas
       if (
         e.target instanceof HTMLInputElement ||
@@ -11,8 +21,6 @@ export function useGlobalKeyboard() {
       ) {
         return;
       }
-
-      const store = useFileManagerStore.getState();
 
       switch (e.key) {
         case "Tab": {

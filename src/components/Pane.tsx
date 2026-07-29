@@ -26,7 +26,7 @@ export function Pane({ paneId }: PaneProps) {
         isActive ? "border-blue-500" : "border-gray-300 dark:border-gray-700"
       }`}
     >
-      <PathBar path={paneState.path} />
+      <PathBar path={paneState.path} paneId={paneId} isEditing={paneState.isEditingPath} />
 
       {paneState.error && (
         <div className="bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-100 px-3 py-2 text-sm">
