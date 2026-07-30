@@ -38,7 +38,7 @@ export function FileRow({
   const openContextMenu = useFileManagerStore((s) => s.openContextMenu);
   const clearSelection = useFileManagerStore((s) => s.clearSelection);
   const setActivePane = useFileManagerStore((s) => s.setActivePane);
-  const columnWidths = useFileManagerStore((s) => s.columnWidths);
+  const columnWidths = useFileManagerStore((s) => s.panes[paneId].columnWidths);
 
   if (isRenaming) {
     return (

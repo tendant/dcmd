@@ -35,6 +35,7 @@ export interface PaneSettings {
   sortKey: string;
   sortAscending: boolean;
   showHidden: boolean;
+  columns: ColumnWidths;
 }
 
 export interface ColumnWidths {
@@ -47,7 +48,6 @@ export interface Settings {
   splitRatio: number;
   left: PaneSettings;
   right: PaneSettings;
-  columns: ColumnWidths;
 }
 
 export interface StartupInfo {

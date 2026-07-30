@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 /// Bumped when the shape changes incompatibly. Every field also carries a serde
 /// default, so adding one does not invalidate an existing file.
-pub const CURRENT_VERSION: u32 = 1;
+pub const CURRENT_VERSION: u32 = 2;
 
 fn default_version() -> u32 {
     CURRENT_VERSION
@@ -21,6 +21,7 @@ pub struct PaneSettings {
     pub sort_key: String,
     pub sort_ascending: bool,
     pub show_hidden: bool,
+    pub columns: ColumnWidths,
 }
 
 impl Default for PaneSettings {
@@ -29,6 +30,7 @@ impl Default for PaneSettings {
             sort_key: default_sort_key(),
             sort_ascending: true,
             show_hidden: false,
+            columns: ColumnWidths::default(),
         }
     }
 }
@@ -64,7 +66,10 @@ pub struct Settings {
     pub split_ratio: f64,
     pub left: PaneSettings,
     pub right: PaneSettings,
-    pub columns: ColumnWidths,
+    /// Version 1 kept one set of column widths for both panes. Retained only so
+    /// an existing file can be migrated; never written back.
+    #[serde(skip_serializing)]
+    pub columns: Option<ColumnWidths>,
 }
 
 impl Default for Settings {
@@ -74,7 +79,7 @@ impl Default for Settings {
             split_ratio: default_split(),
             left: PaneSettings::default(),
             right: PaneSettings::default(),
-            columns: ColumnWidths::default(),
+            columns: None,
         }
     }
 }
@@ -97,6 +102,16 @@ impl Settings {
                 pane.sort_key = default_sort_key();
             }
         }
+        // Version 1 stored one set of widths for both panes. Carry them over
+        // rather than discarding a layout the user had chosen.
+        if self.version < 2 {
+            if let Some(shared) = self.columns.take() {
+                self.left.columns = shared.clone();
+                self.right.columns = shared;
+            }
+        }
+        self.columns = None;
+
         let clamp_col = |w: f64| {
             if w.is_finite() {
                 w.clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH)
@@ -104,8 +119,10 @@ impl Settings {
                 DEFAULT_COLUMN_WIDTH
             }
         };
-        self.columns.size = clamp_col(self.columns.size);
-        self.columns.modified = clamp_col(self.columns.modified);
+        for pane in [&mut self.left, &mut self.right] {
+            pane.columns.size = clamp_col(pane.columns.size);
+            pane.columns.modified = clamp_col(pane.columns.modified);
+        }
         self.version = CURRENT_VERSION;
         self
     }
@@ -218,35 +235,74 @@ mod tests {
     #[test]
     fn a_column_width_that_would_hide_or_swamp_a_column_is_clamped() {
         assert_eq!(
-            parse(r#"{"columns":{"size":0}}"#).columns.size,
+            parse(r#"{"version":2,"left":{"columns":{"size":0}}}"#)
+                .left
+                .columns
+                .size,
             MIN_COLUMN_WIDTH
         );
         assert_eq!(
-            parse(r#"{"columns":{"size":99999}}"#).columns.size,
+            parse(r#"{"version":2,"left":{"columns":{"size":99999}}}"#)
+                .left
+                .columns
+                .size,
             MAX_COLUMN_WIDTH
         );
         assert_eq!(
-            parse(r#"{"columns":{"modified":-3}}"#).columns.modified,
+            parse(r#"{"version":2,"right":{"columns":{"modified":-3}}}"#)
+                .right
+                .columns
+                .modified,
             MIN_COLUMN_WIDTH
         );
     }
 
     #[test]
-    fn column_widths_round_trip() {
+    fn column_widths_round_trip_per_pane() {
         let s = Settings {
-            columns: ColumnWidths {
-                size: 90.0,
-                modified: 120.0,
+            left: PaneSettings {
+                columns: ColumnWidths {
+                    size: 90.0,
+                    modified: 120.0,
+                },
+                ..PaneSettings::default()
+            },
+            right: PaneSettings {
+                columns: ColumnWidths {
+                    size: 50.0,
+                    modified: 200.0,
+                },
+                ..PaneSettings::default()
             },
             ..Settings::default()
         };
-        assert_eq!(parse(&serialise(&s)).columns, s.columns);
+        let back = parse(&serialise(&s));
+        assert_eq!(back.left.columns, s.left.columns);
+        assert_eq!(back.right.columns, s.right.columns);
+    }
+
+    // A file written before the panes had their own widths keeps the layout the
+    // user chose, applied to both, rather than silently reverting to defaults.
+    #[test]
+    fn a_version_1_file_migrates_its_shared_widths_to_both_panes() {
+        let s = parse(r#"{"version":1,"columns":{"size":110,"modified":150}}"#);
+        assert_eq!(s.left.columns.size, 110.0);
+        assert_eq!(s.right.columns.modified, 150.0);
+        assert_eq!(s.version, CURRENT_VERSION);
+    }
+
+    #[test]
+    fn the_legacy_field_is_never_written_back() {
+        let s = parse(r#"{"version":1,"columns":{"size":110,"modified":150}}"#);
+        assert!(!serialise(&s).contains("\"columns\": {\n    \"size\": 110"));
+        // Reloading what we wrote keeps the migrated values.
+        assert_eq!(parse(&serialise(&s)).left.columns.size, 110.0);
     }
 
     #[test]
     fn a_file_from_before_columns_existed_still_loads() {
         let s = parse(r#"{"splitRatio": 0.6, "left": {"sortKey": "size"}}"#);
-        assert_eq!(s.columns, ColumnWidths::default());
+        assert_eq!(s.left.columns, ColumnWidths::default());
         assert_eq!(s.left.sort_key, "size");
     }
 

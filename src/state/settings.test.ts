@@ -10,9 +10,8 @@ import type { Settings } from "../tauri/commands";
 const base = (): Settings => ({
   version: 1,
   splitRatio: 0.5,
-  left: { sortKey: "name", sortAscending: true, showHidden: false },
-  right: { sortKey: "name", sortAscending: true, showHidden: false },
-  columns: { size: 64, modified: 64 },
+  left: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 64, modified: 64 } },
+  right: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 64, modified: 64 } },
 });
 
 beforeEach(() => {
@@ -32,7 +31,7 @@ describe("settingsFrom", () => {
     });
     const captured = settingsFrom(useFileManagerStore.getState());
     expect(captured.splitRatio).toBe(0.7);
-    expect(captured.left).toEqual({ sortKey: "size", sortAscending: false, showHidden: true });
+    expect(captured.left).toMatchObject({ sortKey: "size", sortAscending: false, showHidden: true });
   });
 });
 
@@ -41,7 +40,7 @@ describe("applySettings", () => {
     useFileManagerStore.getState().applySettings({
       ...base(),
       splitRatio: 0.35,
-      right: { sortKey: "modified", sortAscending: false, showHidden: true },
+      right: { sortKey: "modified", sortAscending: false, showHidden: true, columns: { size: 64, modified: 64 } },
     });
     const s = useFileManagerStore.getState();
     expect(s.splitRatio).toBe(0.35);
@@ -53,7 +52,7 @@ describe("applySettings", () => {
   it("falls back on a sort key this build does not know", () => {
     useFileManagerStore.getState().applySettings({
       ...base(),
-      left: { sortKey: "colour", sortAscending: true, showHidden: false },
+      left: { sortKey: "colour", sortAscending: true, showHidden: false, columns: { size: 64, modified: 64 } },
     });
     expect(useFileManagerStore.getState().panes.left.sort.key).toBe("name");
   });
@@ -110,20 +109,29 @@ describe("settingsEqual", () => {
   });
 });
 
-describe("column widths persist", () => {
-  it("are captured for saving", () => {
-    useFileManagerStore.setState({ columnWidths: { size: 90, modified: 120 } });
-    expect(settingsFrom(useFileManagerStore.getState()).columns).toEqual({
-      size: 90,
-      modified: 120,
+describe("column widths persist per pane", () => {
+  it("are captured separately for each pane", () => {
+    const st = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: {
+        ...st.panes,
+        left: { ...st.panes.left, columnWidths: { size: 90, modified: 120 } },
+        right: { ...st.panes.right, columnWidths: { size: 45, modified: 200 } },
+      },
     });
+    const saved = settingsFrom(useFileManagerStore.getState());
+    expect(saved.left.columns).toEqual({ size: 90, modified: 120 });
+    expect(saved.right.columns).toEqual({ size: 45, modified: 200 });
   });
 
-  it("are restored on load", () => {
+  it("are restored to the pane they belonged to", () => {
     useFileManagerStore.getState().applySettings({
       ...base(),
-      columns: { size: 110, modified: 75 },
+      left: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 110, modified: 75 } },
+      right: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 55, modified: 180 } },
     });
-    expect(useFileManagerStore.getState().columnWidths).toEqual({ size: 110, modified: 75 });
+    const s = useFileManagerStore.getState();
+    expect(s.panes.left.columnWidths).toEqual({ size: 110, modified: 75 });
+    expect(s.panes.right.columnWidths).toEqual({ size: 55, modified: 180 });
   });
 });

@@ -120,6 +120,8 @@ harder rather than easier.
     edge; double-clicking a handle resets both. Widths are in pixels rather than
     a fraction, since these size their content rather than the window, and are
     clamped so a column can neither vanish nor squeeze out the name
+-   Per pane, like the sort: the two can be very different widths once the split
+    is dragged, and a narrow pane needs narrower columns than a wide one
 -   `Cmd/Ctrl+1..5` selects a key; pressing the active one reverses it
 -   Names compare numerically, so `file2` precedes `file10`
 -   The cursor follows its entry when the order changes, not its index
@@ -200,7 +202,12 @@ mouse.
 # Settings
 
 Stored as JSON in the platform config directory, `settings.json`. Currently the
-split ratio and, per pane, the sort key, direction and whether dotfiles show.
+split ratio and, per pane, the sort key and direction, whether dotfiles show,
+and the column widths.
+
+The `version` field earns its place: version 1 kept one set of column widths for
+both panes, and a version 1 file is migrated by applying them to each rather
+than dropping a layout the user had chosen.
 
 -   Loaded with the start directory in a single `startup_info` command, because
     each round trip sits on the startup critical path

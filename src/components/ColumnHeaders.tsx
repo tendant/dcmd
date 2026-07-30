@@ -9,7 +9,7 @@ import { ColumnResizer } from "./ColumnResizer";
 export function ColumnHeaders({ paneId }: { paneId: PaneId }) {
   const sort = useFileManagerStore((s) => s.panes[paneId].sort);
   const setSort = useFileManagerStore((s) => s.setSort);
-  const widths = useFileManagerStore((s) => s.columnWidths);
+  const widths = useFileManagerStore((s) => s.panes[paneId].columnWidths);
 
   const label = (key: SortKey, text: string) => {
     const active = sort.key === key;
@@ -38,7 +38,7 @@ export function ColumnHeaders({ paneId }: { paneId: PaneId }) {
         {label("name", "Name")}
       </button>
 
-      <ColumnResizer column="size" />
+      <ColumnResizer column="size" paneId={paneId} />
       <button
         onClick={() => setSort(paneId, "size")}
         aria-sort={sort.key === "size" ? (sort.ascending ? "ascending" : "descending") : "none"}
@@ -48,7 +48,7 @@ export function ColumnHeaders({ paneId }: { paneId: PaneId }) {
         {label("size", "Size")}
       </button>
 
-      <ColumnResizer column="modified" />
+      <ColumnResizer column="modified" paneId={paneId} />
       <button
         onClick={() => setSort(paneId, "modified")}
         aria-sort={

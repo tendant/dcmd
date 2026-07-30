@@ -11,13 +11,14 @@ export function settingsFrom(state: FileManagerState): Settings {
       sortKey: state.panes.left.sort.key,
       sortAscending: state.panes.left.sort.ascending,
       showHidden: state.panes.left.showHidden,
+      columns: { ...state.panes.left.columnWidths },
     },
     right: {
       sortKey: state.panes.right.sort.key,
       sortAscending: state.panes.right.sort.ascending,
       showHidden: state.panes.right.showHidden,
+      columns: { ...state.panes.right.columnWidths },
     },
-    columns: { ...state.columnWidths },
   };
 }
 

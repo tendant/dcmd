@@ -3,6 +3,7 @@ import {
   MAX_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
   useFileManagerStore,
+  type PaneId,
   type ResizableColumn,
 } from "../state/fileManagerStore";
 
@@ -24,8 +25,14 @@ export const COLUMN_HANDLE_CLASS = "mx-1 w-2 shrink-0";
  * Uses pointer capture for the same reason the pane divider does: the handle is
  * a few pixels wide and the pointer leaves it long before the layout follows.
  */
-export function ColumnResizer({ column }: { column: ResizableColumn }) {
-  const width = useFileManagerStore((s) => s.columnWidths[column]);
+export function ColumnResizer({
+  column,
+  paneId,
+}: {
+  column: ResizableColumn;
+  paneId: PaneId;
+}) {
+  const width = useFileManagerStore((s) => s.panes[paneId].columnWidths[column]);
   const setColumnWidth = useFileManagerStore((s) => s.setColumnWidth);
   const resetColumnWidths = useFileManagerStore((s) => s.resetColumnWidths);
   const [dragging, setDragging] = useState(false);
@@ -54,7 +61,7 @@ export function ColumnResizer({ column }: { column: ResizableColumn }) {
         if (frame.current !== null) cancelAnimationFrame(frame.current);
         frame.current = requestAnimationFrame(() => {
           frame.current = null;
-          setColumnWidth(column, from.width - (e.clientX - from.x));
+          setColumnWidth(paneId, column, from.width - (e.clientX - from.x));
         });
       }}
       onPointerUp={(e) => {
@@ -66,18 +73,18 @@ export function ColumnResizer({ column }: { column: ResizableColumn }) {
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => {
         e.stopPropagation();
-        resetColumnWidths();
+        resetColumnWidths(paneId);
       }}
       onKeyDown={(e) => {
         if (e.key === "ArrowLeft") {
           e.preventDefault();
-          setColumnWidth(column, width + 8);
+          setColumnWidth(paneId, column, width + 8);
         } else if (e.key === "ArrowRight") {
           e.preventDefault();
-          setColumnWidth(column, width - 8);
+          setColumnWidth(paneId, column, width - 8);
         } else if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          resetColumnWidths();
+          resetColumnWidths(paneId);
         }
       }}
       title="Drag to resize, double-click to reset"
