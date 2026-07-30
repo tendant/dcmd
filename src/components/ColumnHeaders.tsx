@@ -2,8 +2,8 @@ import { useFileManagerStore, type PaneId, type SortKey } from "../state/fileMan
 
 const COLUMNS: { key: SortKey; label: string; className: string }[] = [
   { key: "name", label: "Name", className: "flex-1 text-left" },
-  { key: "size", label: "Size", className: "w-20 text-right" },
-  { key: "modified", label: "Modified", className: "w-28 text-right" },
+  { key: "size", label: "Size", className: "w-16 text-right" },
+  { key: "modified", label: "Modified", className: "w-16 text-right" },
 ];
 
 /**

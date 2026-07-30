@@ -1,6 +1,7 @@
 import { FileEntry } from "../types/fileEntry";
 import { useFileManagerStore, PaneId } from "../state/fileManagerStore";
 import { RenameInput } from "./RenameInput";
+import { formatBytes, formatTimestamp } from "../format";
 
 interface FileRowProps {
   entry: FileEntry;
@@ -128,34 +129,12 @@ export function FileRow({
     >
       <span className="w-4 shrink-0">{icon}</span>
       <span className="flex-1 truncate">{entry.name}</span>
-      <span className="w-20 shrink-0 text-right text-xs text-gray-500 dark:text-gray-400">
+      <span className="w-16 shrink-0 text-right text-xs tabular-nums text-gray-500 dark:text-gray-400">
         {isParentDirectory ? "" : sizeLabel}
       </span>
-      <span className="w-28 shrink-0 text-right text-xs text-gray-500 dark:text-gray-400">
-        {isParentDirectory ? "" : formatDate(entry.modifiedAt)}
+      <span className="w-16 shrink-0 text-right text-xs tabular-nums text-gray-500 dark:text-gray-400">
+        {isParentDirectory ? "" : formatTimestamp(entry.modifiedAt)}
       </span>
     </div>
   );
-}
-
-/** Compact enough for a narrow column: time for today, otherwise a short date. */
-function formatDate(ms: number | null): string {
-  if (ms === null) return "";
-  const d = new Date(ms);
-  const now = new Date();
-  const sameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  return sameDay
-    ? d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
-    : d.toLocaleDateString(undefined, { year: "2-digit", month: "short", day: "numeric" });
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return Math.round((bytes / Math.pow(k, i)) * 10) / 10 + " " + sizes[i];
 }
