@@ -18,12 +18,17 @@ pub fn copy_paths(sources: &[PathBuf], destination_dir: &Path) -> Result<(), FsE
     for source in sources {
         let never = std::sync::atomic::AtomicBool::new(false);
         let noop = |_: usize, _: usize, _: &str| {};
+        let mut throwaway = TransferReport::default();
         copy_one(
             source,
             destination_dir,
             ConflictPolicy::Fail,
             &TransferControl { cancel: &never, on_progress: &noop },
+            &mut throwaway,
         )?;
+        if let Some(f) = throwaway.failed.into_iter().next() {
+            return Err(FsError::Io(f.message));
+        }
     }
     Ok(())
 }
@@ -76,7 +81,7 @@ pub fn copy_paths_controlled(
             .unwrap_or_default();
         (control.on_progress)(i, sources.len(), &name);
 
-        match copy_one(source, destination_dir, policy, control) {
+        match copy_one(source, destination_dir, policy, control, &mut report) {
             Ok(Some(())) => report.completed.push(source.display().to_string()),
             Ok(None) => report.skipped.push(source.display().to_string()),
             Err(e) => report.failed.push(FailedItem::new(source, &e)),
@@ -87,11 +92,17 @@ pub fn copy_paths_controlled(
 }
 
 /// `Ok(None)` means the item was skipped by policy.
+/// `Ok(None)` means the item was skipped by policy.
+///
+/// Per-file outcomes inside a merged directory are recorded straight into
+/// `report`, so a directory that mostly succeeded is not reduced to a single
+/// pass/fail.
 fn copy_one(
     source: &Path,
     destination_dir: &Path,
     policy: ConflictPolicy,
     control: &TransferControl<'_>,
+    report: &mut TransferReport,
 ) -> Result<Option<()>, FsError> {
     if !source.exists() {
         return Err(FsError::NotFound(format!(
@@ -107,8 +118,21 @@ fn copy_one(
     // Before resolve_destination, which under Overwrite would delete the source.
     check_not_same_directory(source, destination_dir)?;
 
-    let resolution = resolve_destination(&destination_dir.join(file_name), policy)?;
-    let dest = match resolution.write_path() {
+    let dest = destination_dir.join(file_name);
+
+    // A directory landing on an existing directory is merged, not treated as one
+    // conflicting unit. Replacing wholesale would discard everything the
+    // destination has that the source does not, which is rarely what "copy this
+    // folder in" is meant to do. The policy still applies, but to the individual
+    // files inside.
+    if source.is_dir() && dest.is_dir() {
+        check_not_into_itself(source, destination_dir)?;
+        merge_dir(source, &dest, policy, control, report, &mut Vec::new())?;
+        return Ok(Some(()));
+    }
+
+    let resolution = resolve_destination(&dest, policy)?;
+    let write_to = match resolution.write_path() {
         Some(d) => d.to_path_buf(),
         None => return Ok(None),
     };
@@ -118,9 +142,9 @@ fn copy_one(
     }
 
     let written = if source.is_dir() {
-        copy_dir_recursive(source, &dest, &mut Vec::new(), control)
+        copy_dir_recursive(source, &write_to, &mut Vec::new(), control)
     } else {
-        fs::copy(source, &dest).map(|_| ()).map_err(Into::into)
+        fs::copy(source, &write_to).map(|_| ()).map_err(Into::into)
     };
 
     match (&resolution, written) {
@@ -139,6 +163,139 @@ fn copy_one(
 
         (Resolution::Skip, _) => Ok(None),
     }
+}
+
+/// Copies the contents of `src` into the existing directory `dst`, recursing into
+/// subdirectories that exist on both sides and applying `policy` to files that
+/// collide. Entries present only at the destination are left alone.
+fn merge_dir(
+    src: &Path,
+    dst: &Path,
+    policy: ConflictPolicy,
+    control: &TransferControl<'_>,
+    report: &mut TransferReport,
+    seen: &mut Vec<PathBuf>,
+) -> Result<(), FsError> {
+    control.check()?;
+
+    // Same cycle guard as the plain recursive copy: dereferenced symlinks could
+    // otherwise walk forever.
+    let real = crate::fs::paths::resolve(src);
+    if seen.contains(&real) {
+        return Ok(());
+    }
+    seen.push(real);
+
+    for entry in fs::read_dir(src)? {
+        control.check()?;
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+
+        let outcome = if from.is_dir() {
+            if to.is_dir() {
+                // Both sides have this directory: keep descending.
+                merge_dir(&from, &to, policy, control, report, seen)
+            } else if to.exists() {
+                // A file is sitting where a directory needs to go; that is a real
+                // conflict for the policy to decide.
+                copy_conflicting(&from, &to, policy, control)
+            } else {
+                fs::create_dir(&to)
+                    .map_err(FsError::from)
+                    .and_then(|_| copy_into_new_dir(&from, &to, control, seen))
+            }
+        } else if to.exists() {
+            match copy_conflicting(&from, &to, policy, control) {
+                Ok(()) => Ok(()),
+                Err(FsError::Cancelled(m)) => Err(FsError::Cancelled(m)),
+                Err(e) if policy == ConflictPolicy::Skip => {
+                    let _ = e;
+                    report.skipped.push(from.display().to_string());
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            fs::copy(&from, &to).map(|_| ()).map_err(Into::into)
+        };
+
+        match outcome {
+            Ok(()) => {}
+            // Cancellation stops the whole walk rather than being recorded
+            // against one file.
+            Err(e @ FsError::Cancelled(_)) => return Err(e),
+            Err(e) => report.failed.push(FailedItem::new(&from, &e)),
+        }
+    }
+
+    seen.pop();
+    Ok(())
+}
+
+/// Copies `from` over an existing `to` according to `policy`, staging replacements
+/// so a failure cannot destroy what is already there.
+fn copy_conflicting(
+    from: &Path,
+    to: &Path,
+    policy: ConflictPolicy,
+    control: &TransferControl<'_>,
+) -> Result<(), FsError> {
+    match resolve_destination(to, policy)? {
+        Resolution::Skip => Err(FsError::AlreadyExists(format!(
+            "skipped, already exists: {}",
+            to.display()
+        ))),
+        Resolution::Direct(p) => {
+            if from.is_dir() {
+                copy_dir_recursive(from, &p, &mut Vec::new(), control)
+            } else {
+                fs::copy(from, &p).map(|_| ()).map_err(Into::into)
+            }
+        }
+        Resolution::Replace { staging, target } => {
+            let written = if from.is_dir() {
+                copy_dir_recursive(from, &staging, &mut Vec::new(), control)
+            } else {
+                fs::copy(from, &staging).map(|_| ()).map_err(Into::into)
+            };
+            match written {
+                Ok(()) => commit_replace(&staging, &target),
+                Err(e) => {
+                    discard_staging(&staging);
+                    Err(e)
+                }
+            }
+        }
+    }
+}
+
+/// Fills a directory that was just created, so nothing inside can collide.
+fn copy_into_new_dir(
+    src: &Path,
+    dst: &Path,
+    control: &TransferControl<'_>,
+    seen: &mut Vec<PathBuf>,
+) -> Result<(), FsError> {
+    for entry in fs::read_dir(src)? {
+        control.check()?;
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            let real = crate::fs::paths::resolve(&from);
+            if seen.contains(&real) {
+                continue;
+            }
+            seen.push(real);
+            fs::create_dir(&to)?;
+            copy_into_new_dir(&from, &to, control, seen)?;
+            seen.pop();
+        } else {
+            fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
 }
 
 /// Rejects copying a directory into itself or anywhere beneath it, which would
@@ -580,7 +737,7 @@ mod replace_safety_tests {
     }
 
     #[test]
-    fn a_successful_replace_swaps_the_contents_and_cleans_up() {
+    fn a_directory_landing_on_an_existing_one_merges_and_cleans_up() {
         let tmp = TempDir::new().unwrap();
         let src = tmp.path().join("src");
         fs::create_dir(&src).unwrap();
@@ -595,12 +752,12 @@ mod replace_safety_tests {
         let report = copy_paths_with(&[src], &dest, ConflictPolicy::Overwrite).unwrap();
 
         assert_eq!(report.completed.len(), 1, "{:?}", report.failed);
-        assert!(existing.join("new.txt").exists());
-        assert!(!existing.join("old.txt").exists(), "replace should not merge");
-        let debris: Vec<_> = fs::read_dir(&dest)
+        assert!(existing.join("new.txt").exists(), "source file should arrive");
+        assert!(existing.join("old.txt").exists(), "destination file should survive");
+        let debris: Vec<_> = fs::read_dir(&existing)
             .unwrap()
             .flatten()
-            .filter(|e| e.file_name().to_string_lossy().contains("dcmd-incoming"))
+            .filter(|e| e.file_name().to_string_lossy().contains("dcmd~"))
             .collect();
         assert!(debris.is_empty(), "staging debris left behind");
     }
@@ -665,45 +822,58 @@ mod partial_conflict_tests {
         (tmp, left, right, sources)
     }
 
+    // A shared folder name is not itself a conflict, since folders merge. Only
+    // files that clash inside it are.
     #[test]
-    fn conflicts_report_only_the_colliding_names() {
+    fn conflicts_descend_into_shared_folders() {
         let (_t, _l, right, sources) = fixture();
         let mut c = find_conflicts(&sources, &right);
         c.sort();
-        assert_eq!(c, vec!["dup.txt", "dup_dir"]);
+        // dup_dir exists on both sides but holds different files, so nothing in
+        // it actually collides.
+        assert_eq!(c, vec!["dup.txt"]);
     }
 
     #[test]
-    fn skip_copies_the_rest_and_leaves_the_collisions_untouched() {
+    fn a_file_clashing_inside_a_shared_folder_is_reported_with_its_path() {
+        let (_t, left, right, sources) = fixture();
+        fs::write(left.join("dup_dir/same.txt"), "L").unwrap();
+        fs::write(right.join("dup_dir/same.txt"), "R").unwrap();
+
+        let mut c = find_conflicts(&sources, &right);
+        c.sort();
+        assert_eq!(c, vec!["dup.txt", "dup_dir/same.txt"]);
+    }
+
+    #[test]
+    fn skip_copies_the_rest_and_leaves_colliding_files_untouched() {
         let (_t, _l, right, sources) = fixture();
         let report = copy_paths_with(&sources, &right, ConflictPolicy::Skip).unwrap();
-
-        assert_eq!(report.completed.len(), 2, "{report:?}");
-        assert_eq!(report.skipped.len(), 2, "{report:?}");
         assert!(report.failed.is_empty(), "{report:?}");
 
-        // Non-colliding items arrived, nested structure intact.
         assert_eq!(fs::read_to_string(right.join("a.txt")).unwrap(), "A");
         assert_eq!(fs::read_to_string(right.join("tree/sub/y.txt")).unwrap(), "Y");
-        // Colliding items untouched.
+        // The clashing file keeps the destination's version.
         assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
+        // The shared folder merged: both sides' files are present.
         assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
+        assert_eq!(fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(), "NEW");
     }
 
     #[test]
-    fn keep_both_writes_alongside_only_where_needed() {
+    fn keep_both_suffixes_only_the_clashing_file() {
         let (_t, _l, right, sources) = fixture();
         let report = copy_paths_with(&sources, &right, ConflictPolicy::KeepBoth).unwrap();
-
         assert_eq!(report.completed.len(), 4, "{report:?}");
-        // Non-colliding keep their own names.
+
         assert!(right.join("a.txt").exists());
         assert!(right.join("tree/sub/y.txt").exists());
-        // Colliding get suffixed, originals preserved.
         assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
         assert_eq!(fs::read_to_string(right.join("dup copy.txt")).unwrap(), "LEFT-dup");
+        // The folder merged rather than becoming "dup_dir copy".
+        assert!(!right.join("dup_dir copy").exists(), "folder should merge, not duplicate");
         assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
-        assert_eq!(fs::read_to_string(right.join("dup_dir copy/new.txt")).unwrap(), "NEW");
+        assert_eq!(fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(), "NEW");
     }
 
     #[test]
@@ -715,32 +885,36 @@ mod partial_conflict_tests {
         assert_eq!(fs::read_to_string(right.join("a.txt")).unwrap(), "A");
         assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "LEFT-dup");
         assert_eq!(fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(), "NEW");
+        assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
     }
 
-    /// Replace is wholesale, not a merge: this is the semantic most likely to
-    /// surprise, so it is pinned rather than left implicit.
+    /// The point of merging: replacing files inside a shared folder must not take
+    /// the destination's other files with them.
     #[test]
-    fn overwriting_a_directory_discards_files_the_source_lacks() {
-        let (_t, _l, right, sources) = fixture();
+    fn overwriting_inside_a_shared_folder_keeps_destination_only_files() {
+        let (_t, left, right, sources) = fixture();
+        fs::write(left.join("dup_dir/shared.txt"), "L-shared").unwrap();
+        fs::write(right.join("dup_dir/shared.txt"), "R-shared").unwrap();
+
         copy_paths_with(&sources, &right, ConflictPolicy::Overwrite).unwrap();
-        assert!(
-            !right.join("dup_dir/old.txt").exists(),
-            "replace merged instead of replacing"
-        );
+
+        // The clashing file was replaced...
+        assert_eq!(fs::read_to_string(right.join("dup_dir/shared.txt")).unwrap(), "L-shared");
+        // ...and the file only the destination had survived.
+        assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
     }
 
     #[test]
-    fn fail_stops_the_colliding_items_but_still_copies_the_others() {
+    fn fail_refuses_the_clashing_file_but_still_copies_the_others() {
         let (_t, _l, right, sources) = fixture();
         let report = copy_paths_with(&sources, &right, ConflictPolicy::Fail).unwrap();
 
-        assert_eq!(report.completed.len(), 2, "{report:?}");
-        assert_eq!(report.failed.len(), 2, "{report:?}");
-        // The originals survive the refusal.
+        assert_eq!(report.failed.len(), 1, "{report:?}");
         assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
-        assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
-        // And the non-colliding ones still went through.
         assert!(right.join("tree/sub/y.txt").exists());
+        // Merging still delivered the non-clashing file into the shared folder.
+        assert_eq!(fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(), "NEW");
+        assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
     }
 
     #[test]
@@ -757,4 +931,5 @@ mod partial_conflict_tests {
         );
     }
 }
+
 

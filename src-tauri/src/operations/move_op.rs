@@ -97,7 +97,7 @@ pub fn move_paths_controlled(
             .unwrap_or_default();
         (control.on_progress)(i, sources.len(), &name);
 
-        match move_one(source, destination_dir, policy) {
+        match move_one(source, destination_dir, policy, &mut report) {
             Ok(Some(())) => report.completed.push(source.display().to_string()),
             Ok(None) => report.skipped.push(source.display().to_string()),
             Err(e) => report.failed.push(FailedItem::new(source, &e)),
@@ -112,6 +112,7 @@ fn move_one(
     source: &Path,
     destination_dir: &Path,
     policy: ConflictPolicy,
+    report: &mut TransferReport,
 ) -> Result<Option<()>, FsError> {
     if !source.exists() {
         return Err(FsError::NotFound(format!(
@@ -131,7 +132,18 @@ fn move_one(
     // Before resolve_destination, which under Overwrite would delete the source.
     check_not_same_directory(source, destination_dir)?;
 
-    let resolution = resolve_destination(&destination_dir.join(file_name), policy)?;
+    let landing = destination_dir.join(file_name);
+
+    // Directories merge into an existing directory, matching copy: replacing
+    // wholesale would discard whatever the destination has that the source lacks.
+    if source.is_dir() && landing.is_dir() {
+        merge_move(source, &landing, policy, report)?;
+        // Whatever is left behind was skipped or failed, so only prune when empty.
+        let _ = fs::remove_dir(source);
+        return Ok(Some(()));
+    }
+
+    let resolution = resolve_destination(&landing, policy)?;
     let dest = match resolution.write_path() {
         Some(d) => d.to_path_buf(),
         None => return Ok(None),
@@ -158,6 +170,64 @@ fn move_one(
         }
         (Resolution::Skip, _) => Ok(None),
     }
+}
+
+/// Moves the contents of `src` into the existing directory `dst`, recursing where
+/// both sides have the same subdirectory and applying `policy` to files that
+/// collide. Source directories are pruned as they empty; anything skipped or
+/// failed is deliberately left behind rather than lost.
+fn merge_move(
+    src: &Path,
+    dst: &Path,
+    policy: ConflictPolicy,
+    report: &mut TransferReport,
+) -> Result<(), FsError> {
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+
+        let outcome: Result<(), FsError> = if from.is_dir() && to.is_dir() {
+            merge_move(&from, &to, policy, report).map(|_| {
+                let _ = fs::remove_dir(&from);
+            })
+        } else if to.exists() {
+            match resolve_destination(&to, policy) {
+                Ok(Resolution::Skip) => {
+                    report.skipped.push(from.display().to_string());
+                    Ok(())
+                }
+                Ok(Resolution::Direct(p)) => move_entry(&from, &p),
+                Ok(Resolution::Replace { staging, target }) => match move_entry(&from, &staging) {
+                    Ok(()) => commit_replace(&staging, &target),
+                    Err(e) => {
+                        // Only discard the staging copy if the source survived;
+                        // otherwise it is the last copy of the data.
+                        if from.exists() {
+                            discard_staging(&staging);
+                        }
+                        Err(e)
+                    }
+                },
+                Err(e) => Err(e),
+            }
+        } else {
+            move_entry(&from, &to)
+        };
+
+        if let Err(e) = outcome {
+            report.failed.push(FailedItem::new(&from, &e));
+        }
+    }
+    Ok(())
+}
+
+/// Rename where possible, falling back to copy-then-delete across filesystems.
+fn move_entry(from: &Path, to: &Path) -> Result<(), FsError> {
+    if fs::rename(from, to).is_ok() {
+        return Ok(());
+    }
+    copy_then_delete(from, to)
 }
 
 fn copy_then_delete(src: &Path, dst: &Path) -> Result<(), FsError> {
@@ -350,5 +420,74 @@ mod partial_conflict_tests {
         assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
         assert_eq!(fs::read_to_string(right.join("dup copy.txt")).unwrap(), "LEFT-dup");
         assert!(!left.join("dup.txt").exists(), "source should be gone after a move");
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn read(p: &Path) -> String {
+        fs::read_to_string(p).unwrap_or_else(|_| "<missing>".into())
+    }
+
+    #[test]
+    fn moving_into_an_existing_folder_merges_rather_than_replacing() {
+        let tmp = TempDir::new().unwrap();
+        let left = tmp.path().join("left");
+        let right = tmp.path().join("right");
+        let src = left.join("shared");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("from-left.txt"), "L").unwrap();
+        let dst = right.join("shared");
+        fs::create_dir_all(&dst).unwrap();
+        fs::write(dst.join("from-right.txt"), "R").unwrap();
+
+        let report = move_paths_with(&[src.clone()], &right, ConflictPolicy::Fail).unwrap();
+        assert!(report.failed.is_empty(), "{report:?}");
+
+        assert_eq!(read(&dst.join("from-left.txt")), "L", "moved file missing");
+        assert_eq!(read(&dst.join("from-right.txt")), "R", "destination file lost");
+        assert!(!src.exists(), "emptied source folder should be pruned");
+    }
+
+    #[test]
+    fn a_skipped_file_stays_behind_and_keeps_its_folder() {
+        let tmp = TempDir::new().unwrap();
+        let left = tmp.path().join("left");
+        let right = tmp.path().join("right");
+        let src = left.join("shared");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("clash.txt"), "L").unwrap();
+        fs::write(src.join("unique.txt"), "U").unwrap();
+        let dst = right.join("shared");
+        fs::create_dir_all(&dst).unwrap();
+        fs::write(dst.join("clash.txt"), "R").unwrap();
+
+        let report = move_paths_with(&[src.clone()], &right, ConflictPolicy::Skip).unwrap();
+        assert_eq!(report.skipped.len(), 1, "{report:?}");
+
+        assert_eq!(read(&dst.join("clash.txt")), "R", "skipped file was overwritten");
+        assert_eq!(read(&dst.join("unique.txt")), "U", "non-clashing file did not move");
+        // The skipped file must still exist somewhere.
+        assert_eq!(read(&src.join("clash.txt")), "L", "skipped source was lost");
+        assert!(src.exists(), "folder holding a skipped file should not be pruned");
+    }
+
+    #[test]
+    fn nested_folders_merge_at_every_level() {
+        let tmp = TempDir::new().unwrap();
+        let left = tmp.path().join("left");
+        let right = tmp.path().join("right");
+        fs::create_dir_all(left.join("s/a/b")).unwrap();
+        fs::write(left.join("s/a/b/deep.txt"), "D").unwrap();
+        fs::create_dir_all(right.join("s/a/b")).unwrap();
+        fs::write(right.join("s/a/b/other.txt"), "O").unwrap();
+
+        move_paths_with(&[left.join("s")], &right, ConflictPolicy::Fail).unwrap();
+
+        assert_eq!(read(&right.join("s/a/b/deep.txt")), "D");
+        assert_eq!(read(&right.join("s/a/b/other.txt")), "O");
     }
 }

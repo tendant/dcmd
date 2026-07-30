@@ -114,15 +114,41 @@ pub fn check_not_same_directory(source: &Path, destination_dir: &Path) -> Result
     Ok(())
 }
 
-/// Names that already exist at the destination, so the user can be asked before
-/// anything is written.
+/// Things that would actually collide, so the user can be asked before anything
+/// is written.
+///
+/// Directories present on both sides are descended into rather than reported
+/// whole: since they merge, a shared folder name is only a conflict if some file
+/// inside it clashes. Reporting the folder itself would ask the user to decide
+/// about a collision that may not exist.
 pub fn find_conflicts(sources: &[PathBuf], destination_dir: &Path) -> Vec<String> {
-    sources
-        .iter()
-        .filter_map(|s| s.file_name())
-        .filter(|name| destination_dir.join(name).exists())
-        .map(|name| name.to_string_lossy().to_string())
-        .collect()
+    let mut out = Vec::new();
+    for source in sources {
+        let Some(name) = source.file_name() else { continue };
+        let dest = destination_dir.join(name);
+        collect_conflicts(source, &dest, &name.to_string_lossy(), &mut out, 0);
+    }
+    out
+}
+
+fn collect_conflicts(src: &Path, dest: &Path, label: &str, out: &mut Vec<String>, depth: usize) {
+    // Deep trees would make the dialog useless anyway; stop descending well
+    // before it becomes a full walk of the source.
+    if depth > 16 {
+        return;
+    }
+    if !dest.exists() {
+        return;
+    }
+    if src.is_dir() && dest.is_dir() {
+        let Ok(entries) = std::fs::read_dir(src) else { return };
+        for e in entries.flatten() {
+            let child_label = format!("{label}/{}", e.file_name().to_string_lossy());
+            collect_conflicts(&e.path(), &dest.join(e.file_name()), &child_label, out, depth + 1);
+        }
+        return;
+    }
+    out.push(label.to_string());
 }
 
 /// A free path next to `dest`, e.g. `notes copy.txt`, then `notes copy 2.txt`.
