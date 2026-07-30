@@ -75,6 +75,10 @@ whole batch with one message.
 
 **Dotfiles are hidden by default**, toggled per pane.
 
+**Layout and sorting persist** across restarts, in `settings.json` in the
+platform config directory. A corrupt or hand-edited file falls back to defaults
+rather than failing to start.
+
 **Sorting is per pane**, with folders always grouped first. Entries with nothing
 to compare — directories have no size, creation time is missing on some
 filesystems — sort last whichever direction is chosen.

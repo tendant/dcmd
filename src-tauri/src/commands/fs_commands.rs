@@ -10,6 +10,57 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 
+/// Everything the frontend needs before it can draw: where to start, and the
+/// persisted settings.
+///
+/// One command rather than two, because each round trip is on the startup
+/// critical path and the measurements showed no headroom there.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupInfo {
+    pub start_dir: String,
+    pub settings: crate::settings::Settings,
+}
+
+fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, FsError> {
+    use tauri::Manager;
+    app.path()
+        .app_config_dir()
+        .map(|d| d.join("settings.json"))
+        .map_err(|e| FsError::Io(format!("no config directory: {e}")))
+}
+
+#[tauri::command]
+pub async fn startup_info(app: tauri::AppHandle) -> Result<StartupInfo, FsError> {
+    crate::trace_startup_once("startup_info requested");
+    let start_dir = default_start_dir().await?;
+    let settings = match settings_path(&app) {
+        Ok(p) => crate::settings::load_from(&p),
+        // Settings are a convenience; failing to locate them must not stop the
+        // app opening on a usable directory.
+        Err(_) => crate::settings::Settings::default(),
+    };
+    Ok(StartupInfo {
+        start_dir,
+        settings,
+    })
+}
+
+#[tauri::command]
+pub async fn save_settings(
+    app: tauri::AppHandle,
+    settings: crate::settings::Settings,
+) -> Result<(), FsError> {
+    let path = settings_path(&app)?;
+    let settings = settings.sanitised();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::settings::save_to(&path, &settings)
+            .map_err(|e| FsError::Io(format!("could not save settings: {e}")))
+    })
+    .await
+    .map_err(|e| FsError::Io(format!("task join error: {e}")))?
+}
+
 /// Lets the frontend record a startup milestone, since the interesting ones —
 /// when the panes are actually usable — are only observable from that side.
 #[tauri::command]

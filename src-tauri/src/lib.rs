@@ -2,6 +2,7 @@ mod commands;
 mod error;
 mod fs;
 mod operations;
+pub mod settings;
 
 /// When `DCMD_TRACE_STARTUP=1`, report milestones as milliseconds since process
 /// start. The design document sets a sub-100ms startup target, which cannot be
@@ -47,6 +48,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::list_directory,
             commands::mark_startup,
+            commands::startup_info,
+            commands::save_settings,
             commands::default_start_dir,
             commands::open_entry,
             commands::directory_size,

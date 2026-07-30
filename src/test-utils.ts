@@ -17,4 +17,7 @@ export const commandMocks = {
   copyEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
   moveEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
   cancelTransfer: vi.fn(async () => undefined),
+  markStartup: vi.fn(async () => undefined),
+  saveSettings: vi.fn(async () => undefined),
+  startupInfo: vi.fn(async () => ({ startDir: "/", settings: { version: 1, splitRatio: 0.5, left: { sortKey: "name", sortAscending: true, showHidden: false }, right: { sortKey: "name", sortAscending: true, showHidden: false } } })),
 };

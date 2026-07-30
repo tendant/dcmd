@@ -31,6 +31,30 @@ export interface TransferReport {
   failed: FailedItem[];
 }
 
+export interface PaneSettings {
+  sortKey: string;
+  sortAscending: boolean;
+  showHidden: boolean;
+}
+
+export interface Settings {
+  version: number;
+  splitRatio: number;
+  left: PaneSettings;
+  right: PaneSettings;
+}
+
+export interface StartupInfo {
+  startDir: string;
+  settings: Settings;
+}
+
+/** Start directory and persisted settings in one round trip. */
+export const startupInfo = (): Promise<StartupInfo> => invoke<StartupInfo>("startup_info");
+
+export const saveSettings = (settings: Settings): Promise<void> =>
+  invoke<void>("save_settings", { settings });
+
 export const markStartup = (label: string): Promise<void> =>
   invoke<void>("mark_startup", { label });
 

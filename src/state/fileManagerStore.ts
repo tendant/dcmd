@@ -8,6 +8,13 @@ export type PaneId = "left" | "right";
 
 export type SortKey = "name" | "size" | "modified" | "created" | "kind";
 
+export const SORT_KEYS: SortKey[] = ["name", "size", "modified", "created", "kind"];
+
+/** Guards a persisted value: the settings file is user-editable and may predate
+ * or postdate this build's set of keys. */
+export const asSortKey = (value: string): SortKey =>
+  (SORT_KEYS as string[]).includes(value) ? (value as SortKey) : "name";
+
 export interface SortOrder {
   key: SortKey;
   ascending: boolean;
@@ -117,6 +124,8 @@ export interface FileManagerState {
   resetSplit: () => void;
   /** Hides a pane, or restores it if it is the one already hidden. */
   toggleCollapse: (pane: PaneId) => void;
+  /** Applies persisted settings over the defaults at startup. */
+  applySettings: (settings: commands.Settings) => void;
   /** Re-selecting the active key reverses it, which is what column headers do. */
   setSort: (pane: PaneId, key: SortKey) => void;
   setPaneError: (pane: PaneId, error: AppError | string | null) => void;
@@ -296,6 +305,24 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   collapsed: null,
 
   setActivePane: (pane) => set({ activePane: pane }),
+
+  applySettings: (settings) =>
+    set((state) => {
+      const forPane = (p: PaneId, s: commands.PaneSettings) => ({
+        ...state.panes[p],
+        sort: { key: asSortKey(s.sortKey), ascending: s.sortAscending },
+        showHidden: s.showHidden,
+      });
+      return {
+        // Already clamped and validated by the backend; a hand-edited file
+        // cannot put the UI into a state it has no way out of.
+        splitRatio: settings.splitRatio,
+        panes: {
+          left: forPane("left", settings.left),
+          right: forPane("right", settings.right),
+        },
+      };
+    }),
 
   setSplitRatio: (ratio) =>
     set({ splitRatio: Math.min(MAX_SPLIT, Math.max(MIN_SPLIT, ratio)) }),

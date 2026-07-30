@@ -104,9 +104,9 @@ and either pane can be collapsed for a single-pane view.
     it cannot take focus or be reached by Tab while invisible
 -   Focus moves to the other pane when the active one is collapsed
 
-Not done: remembering the split across restarts. That needs the settings store
-sorting also wants — two features now depend on it, which makes it the next
-thing worth building.
+The split and the collapse state are remembered across restarts, apart from a
+collapsed pane: a window that opens missing half its interface reads as broken,
+and re-collapsing costs one keystroke.
 
 ## Sorting
 
@@ -126,8 +126,7 @@ Sorting happens in the frontend, inside `visibleEntries()`, so changing the key
 does not re-list the directory and cannot desynchronise the cursor from a
 filtered view.
 
-Not done: remembering the sort across restarts, which needs the settings store
-that pane sizing also wants.
+The key and direction are remembered across restarts, per pane.
 
 ## Operations
 
@@ -166,6 +165,23 @@ Commands:
 -   Open Terminal
 
 ------------------------------------------------------------------------
+
+# Settings
+
+Stored as JSON in the platform config directory, `settings.json`. Currently the
+split ratio and, per pane, the sort key, direction and whether dotfiles show.
+
+-   Loaded with the start directory in a single `startup_info` command, because
+    each round trip sits on the startup critical path
+-   Written at most twice a second, and only when something actually changed —
+    dragging the divider produces an update per frame
+-   Written via a temporary file and a rename, so an interrupted write cannot
+    leave a half-written file that fails to parse next time
+-   A corrupt, truncated or hand-edited file yields defaults rather than an
+    error: settings are a convenience and must never stop the app starting
+-   Values are validated on load, not trusted. A split of 0 or a sort key from a
+    newer build is replaced, so an edited file cannot put the UI into a state
+    with no way out
 
 # User Interface
 
