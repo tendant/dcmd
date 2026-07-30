@@ -85,6 +85,14 @@ export function useGlobalKeyboard() {
           store.toggleHidden(pane);
           return;
         }
+        // Cmd/Ctrl+1..5 select a sort key; pressing the active one reverses it.
+        const SORT_KEYS = ["name", "size", "modified", "created", "kind"] as const;
+        const digit = Number(key);
+        if (Number.isInteger(digit) && digit >= 1 && digit <= SORT_KEYS.length) {
+          e.preventDefault();
+          store.setSort(pane, SORT_KEYS[digit - 1]);
+          return;
+        }
         if (key === "r") {
           // preventDefault matters here: unhandled, Cmd+R reloads the webview
           // and throws away all pane state.

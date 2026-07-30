@@ -116,7 +116,7 @@ export function FileRow({
     <div
       onClick={handleRowClick}
       onDoubleClick={handleDoubleClick}
-      className={`flex items-center px-2 py-1 text-sm font-mono border-l-4 cursor-pointer select-none transition-colors ${
+      className={`flex items-center gap-2 px-2 py-1 text-sm font-mono border-l-4 cursor-pointer select-none transition-colors ${
         isCursor
           ? "border-l-blue-600 bg-blue-200 dark:bg-blue-800 font-semibold text-gray-900 dark:text-gray-100"
           : isSelected
@@ -126,15 +126,30 @@ export function FileRow({
         isParentDirectory ? "text-amber-700 dark:text-amber-400" : entry.hidden ? "text-gray-400" : "text-gray-900 dark:text-gray-100"
       }`}
     >
-      <span className="mr-2">{icon}</span>
+      <span className="w-4 shrink-0">{icon}</span>
       <span className="flex-1 truncate">{entry.name}</span>
-      {!isParentDirectory && (
-        <span className="ml-2 text-gray-500 dark:text-gray-400 text-xs min-w-[60px] text-right">
-          {sizeLabel}
-        </span>
-      )}
+      <span className="w-20 shrink-0 text-right text-xs text-gray-500 dark:text-gray-400">
+        {isParentDirectory ? "" : sizeLabel}
+      </span>
+      <span className="w-28 shrink-0 text-right text-xs text-gray-500 dark:text-gray-400">
+        {isParentDirectory ? "" : formatDate(entry.modifiedAt)}
+      </span>
     </div>
   );
+}
+
+/** Compact enough for a narrow column: time for today, otherwise a short date. */
+function formatDate(ms: number | null): string {
+  if (ms === null) return "";
+  const d = new Date(ms);
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  return sameDay
+    ? d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString(undefined, { year: "2-digit", month: "short", day: "numeric" });
 }
 
 function formatBytes(bytes: number): string {

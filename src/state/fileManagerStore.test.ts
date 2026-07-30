@@ -26,6 +26,7 @@ const entry = (name: string): FileEntry => ({
   size: 1,
   itemCount: null,
   modifiedAt: null,
+  createdAt: null,
   hidden: false,
 });
 
@@ -52,6 +53,7 @@ function seedPane(cursor: number, selected: string[] = []) {
         rangeStart: null,
         loading: false,
         showHidden: false,
+        sort: { key: "name", ascending: true },
       },
       right: { ...s.panes.right, path: "/right" },
     },
@@ -540,7 +542,8 @@ describe("hidden files", () => {
     withDotfiles(1);
     useFileManagerStore.getState().toggleHidden("left");
     const names = visibleEntries(useFileManagerStore.getState().panes.left).map((e) => e.name);
-    expect(names).toEqual(["a.txt", ".env", "b.txt"]);
+    // Sorted, so ".env" leads rather than sitting where it was inserted.
+    expect(names).toEqual([".env", "a.txt", "b.txt"]);
   });
 
   // The hazard: with dotfiles hidden, display index 2 is b.txt, not .env. An
@@ -592,5 +595,130 @@ describe("trash reporting", () => {
     });
     await useFileManagerStore.getState().trashSelection("left");
     expect(useFileManagerStore.getState().dialog).toBeNull();
+  });
+});
+
+describe("sorting", () => {
+  const at = (name: string, over: Partial<FileEntry> = {}): FileEntry => ({
+    ...entry(name),
+    ...over,
+  });
+
+  function seedMixed() {
+    seedPane(1);
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: {
+        ...s.panes,
+        left: {
+          ...s.panes.left,
+          entries: [
+            at("file10.txt", { size: 10, modifiedAt: 300, createdAt: 30 }),
+            at("dir-b", { kind: "directory", size: null, modifiedAt: 100 }),
+            at("file2.txt", { size: 500, modifiedAt: 200, createdAt: 10 }),
+            at("dir-a", { kind: "directory", size: null, modifiedAt: 400 }),
+          ],
+        },
+      },
+    });
+  }
+  const names = () =>
+    visibleEntries(useFileManagerStore.getState().panes.left).map((e) => e.name);
+
+  it("groups directories ahead of files", () => {
+    seedMixed();
+    expect(names().slice(0, 2)).toEqual(["dir-a", "dir-b"]);
+  });
+
+  it("keeps directories first even when sorting by size", () => {
+    seedMixed();
+    useFileManagerStore.getState().setSort("left", "size");
+    expect(names().slice(0, 2).every((n) => n.startsWith("dir"))).toBe(true);
+  });
+
+  it("orders names the way a person reads them", () => {
+    seedMixed();
+    // Plain string comparison would put file10 before file2.
+    expect(names().slice(2)).toEqual(["file2.txt", "file10.txt"]);
+  });
+
+  it("reverses when the active key is chosen again", () => {
+    seedMixed();
+    const store = useFileManagerStore.getState();
+    store.setSort("left", "name");
+    expect(useFileManagerStore.getState().panes.left.sort.ascending).toBe(false);
+    expect(names().slice(0, 2)).toEqual(["dir-b", "dir-a"]);
+  });
+
+  it("starts ascending when a different key is chosen", () => {
+    seedMixed();
+    const store = useFileManagerStore.getState();
+    store.setSort("left", "name"); // now descending
+    store.setSort("left", "size");
+    const s = useFileManagerStore.getState().panes.left.sort;
+    expect(s).toEqual({ key: "size", ascending: true });
+  });
+
+  it("sorts by size, largest last when ascending", () => {
+    seedMixed();
+    useFileManagerStore.getState().setSort("left", "size");
+    expect(names().slice(2)).toEqual(["file10.txt", "file2.txt"]);
+  });
+
+  it("sorts by modified time", () => {
+    seedMixed();
+    useFileManagerStore.getState().setSort("left", "modified");
+    expect(names().slice(2)).toEqual(["file2.txt", "file10.txt"]);
+  });
+
+  // The documented trap: creation time is absent on some filesystems.
+  it("puts entries with no creation time last, in both directions", () => {
+    seedPane(1);
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: {
+        ...s.panes,
+        left: {
+          ...s.panes.left,
+          entries: [
+            at("unknown.txt", { createdAt: null }),
+            at("older.txt", { createdAt: 100 }),
+            at("newer.txt", { createdAt: 900 }),
+          ],
+        },
+      },
+    });
+    const store = useFileManagerStore.getState();
+    store.setSort("left", "created");
+    expect(names()).toEqual(["older.txt", "newer.txt", "unknown.txt"]);
+    store.setSort("left", "created"); // descending
+    expect(names()).toEqual(["newer.txt", "older.txt", "unknown.txt"]);
+  });
+
+  it("keeps the cursor on the same entry when the order changes", () => {
+    seedMixed();
+    const store = useFileManagerStore.getState();
+    store.setCursor("left", 3); // file2.txt under the default name sort
+    const before = entryAtCursor(useFileManagerStore.getState().panes.left)?.name;
+    store.setSort("left", "size");
+    const after = entryAtCursor(useFileManagerStore.getState().panes.left)?.name;
+    expect(after).toBe(before);
+  });
+
+  // Sorting must not desynchronise the cursor from a filtered view.
+  it("resolves operations against the sorted, filtered rows", async () => {
+    seedMixed();
+    const store = useFileManagerStore.getState();
+    store.setFilter("left", "file");
+    store.setSort("left", "size"); // file10 (10) then file2 (500)
+    useFileManagerStore.getState().setCursor("left", 1);
+    await useFileManagerStore.getState().trashSelection("left");
+    expect(commands.trashEntries).toHaveBeenCalledWith(["/left/file10.txt"]);
+  });
+
+  it("is per pane", () => {
+    seedMixed();
+    useFileManagerStore.getState().setSort("left", "size");
+    expect(useFileManagerStore.getState().panes.right.sort.key).toBe("name");
   });
 });

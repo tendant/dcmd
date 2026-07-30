@@ -114,36 +114,24 @@ Notes for whoever picks this up:
 
 ## Sorting
 
-**TODO — not yet implemented.** Listings are currently fixed at
-directories-first, then case-insensitive by name.
+Implemented. Rows sort by name, size, modified time, created time or extension,
+ascending or descending, per pane. Directories are grouped ahead of files
+regardless of the key, since burying folders under a size sort makes navigating
+harder rather than easier.
 
--   Sort by name
--   Sort by size
--   Sort by modified time
--   Sort by created time
--   Sort by extension / kind
--   Ascending and descending, toggled by re-selecting the active key
--   Directories grouped before files, independent of the sort key
--   Per pane, since the two are often used for different purposes
--   Clickable column headers, with the active key and direction shown
--   Keyboard shortcuts for each key, so it stays usable without the mouse
+-   Clickable column headers, showing the active key and direction
+-   `Cmd/Ctrl+1..5` selects a key; pressing the active one reverses it
+-   Names compare numerically, so `file2` precedes `file10`
+-   The cursor follows its entry when the order changes, not its index
+-   Entries with no value for the key — directories have no size, and creation
+    time is absent on some filesystems — sort last in **both** directions
 
-Notes for whoever picks this up:
+Sorting happens in the frontend, inside `visibleEntries()`, so changing the key
+does not re-list the directory and cannot desynchronise the cursor from a
+filtered view.
 
--   `FileEntry` carries `modifiedAt` but **not** a creation time. Sorting by
-    created time needs a new field from `build_entry`.
--   `std::fs::Metadata::created()` is not available everywhere: it works on
-    macOS and Windows, but returns an error on Linux filesystems that do not
-    record a birth time. The field has to be optional, and the UI needs to
-    behave sensibly when it is missing rather than sorting those entries
-    arbitrarily.
--   Sorting happens in Rust today (`read_dir_entries`). Doing it in the
-    frontend instead would let the key change without re-listing, but means
-    shipping the comparison logic to the client; either is defensible, but the
-    choice should be made deliberately rather than by accident.
--   Whatever is chosen must resolve rows through `visibleEntries()`, or a sort
-    applied while a filter is active will desynchronise the cursor from what is
-    on screen.
+Not done: remembering the sort across restarts, which needs the settings store
+that pane sizing also wants.
 
 ## Operations
 

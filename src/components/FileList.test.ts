@@ -9,6 +9,7 @@ const file = (name: string): FileEntry => ({
   size: 1,
   itemCount: null,
   modifiedAt: null,
+  createdAt: null,
   hidden: false,
 });
 

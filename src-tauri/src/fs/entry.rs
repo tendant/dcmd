@@ -19,6 +19,10 @@ pub struct FileEntry {
     /// non-recursive read_dir); the recursive byte size is opt-in via Space.
     pub item_count: Option<u64>,
     pub modified_at: Option<i64>,
+    /// Creation time, where the platform records one. `None` on filesystems that
+    /// do not — several Linux ones — so the UI has to cope with it being absent
+    /// rather than sorting those entries arbitrarily.
+    pub created_at: Option<i64>,
     pub hidden: bool,
 }
 
@@ -54,6 +58,12 @@ pub fn build_entry(
         None
     };
 
+    let created_at = metadata
+        .created()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64);
+
     let modified_at = metadata
         .modified()?
         .duration_since(std::time::UNIX_EPOCH)
@@ -67,6 +77,7 @@ pub fn build_entry(
         size,
         item_count,
         modified_at,
+        created_at,
         hidden,
     })
 }
@@ -97,6 +108,7 @@ mod tests {
             size: Some(1024),
             item_count: None,
             modified_at: Some(1000000),
+            created_at: None,
             hidden: false,
         };
 

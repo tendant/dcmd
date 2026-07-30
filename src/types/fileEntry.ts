@@ -8,5 +8,7 @@ export interface FileEntry {
   /** Direct child count, directories only. Recursive byte size is opt-in (Space). */
   itemCount: number | null;
   modifiedAt: number | null;
+  /** Absent on filesystems that do not record one; the UI must not assume it. */
+  createdAt: number | null;
   hidden: boolean;
 }

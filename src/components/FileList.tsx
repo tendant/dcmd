@@ -23,6 +23,7 @@ const NEW_FOLDER_PLACEHOLDER: FileEntry = {
   size: null,
   itemCount: null,
   modifiedAt: null,
+  createdAt: null,
   hidden: false,
 };
 
@@ -34,6 +35,7 @@ const PARENT_ENTRY: FileEntry = {
   size: null,
   itemCount: null,
   modifiedAt: null,
+  createdAt: null,
   hidden: false,
 };
 

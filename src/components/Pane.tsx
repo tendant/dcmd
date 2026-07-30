@@ -2,6 +2,7 @@ import { useFileManagerStore, visibleEntries, PaneId } from "../state/fileManage
 import { PathBar } from "./PathBar";
 import { FileList } from "./FileList";
 import { ErrorBar } from "./ErrorBar";
+import { ColumnHeaders } from "./ColumnHeaders";
 
 interface PaneProps {
   paneId: PaneId;
@@ -39,6 +40,8 @@ export function Pane({ paneId }: PaneProps) {
           <div className="text-xs text-gray-400">{paneState.path}</div>
         </div>
       ) : (
+        <>
+        <ColumnHeaders paneId={paneId} />
         <FileList
           entries={visible}
           selected={paneState.selected}
@@ -47,6 +50,7 @@ export function Pane({ paneId }: PaneProps) {
           renameMode={paneState.renameMode}
           filter={paneState.filter}
         />
+        </>
       )}
 
       {paneState.filter && (

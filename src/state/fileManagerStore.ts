@@ -6,6 +6,13 @@ import { toAppError, isCancellation, type AppError, type ErrorContext } from "..
 
 export type PaneId = "left" | "right";
 
+export type SortKey = "name" | "size" | "modified" | "created" | "kind";
+
+export interface SortOrder {
+  key: SortKey;
+  ascending: boolean;
+}
+
 export type RenameMode =
   | { type: "rename"; path: string }
   | { type: "creating" }
@@ -26,6 +33,8 @@ export interface PaneState {
   /** Whether dotfiles are listed. Per pane, since the two are often used for
    * different things — browsing a project on one side, a config dir on the other. */
   showHidden: boolean;
+  /** Sort applied to this pane's rows. Per pane, for the same reason. */
+  sort: SortOrder;
   /**
    * Directory sizes computed on demand (Space), keyed by path. Directory sizes
    * are never computed during listing — see `directory_size` in the backend.
@@ -88,6 +97,8 @@ export interface FileManagerState {
   setFilter: (pane: PaneId, filter: string) => void;
   clearFilter: (pane: PaneId) => void;
   toggleHidden: (pane: PaneId) => void;
+  /** Re-selecting the active key reverses it, which is what column headers do. */
+  setSort: (pane: PaneId, key: SortKey) => void;
   setPaneError: (pane: PaneId, error: AppError | string | null) => void;
   reportError: (pane: PaneId, err: unknown, context?: ErrorContext) => void;
   /** How many entries an operation would act on (selection, else cursor row). */
@@ -137,13 +148,84 @@ let transferSeq = 1;
  * differ, and reading the unfiltered array would make an operation act on a row
  * the user cannot see.
  */
+/**
+ * Compares names the way a person reads them, so "file2" precedes "file10"
+ * rather than following it as a plain string comparison would.
+ */
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+/**
+ * The value a key sorts on, or null where the entry has none — directories have
+ * no size, and creation time is missing on some filesystems.
+ */
+function sortValue(key: SortKey, e: FileEntry): number | null {
+  switch (key) {
+    case "size":
+      return e.size;
+    case "modified":
+      return e.modifiedAt;
+    case "created":
+      return e.createdAt;
+    default:
+      return 0;
+  }
+}
+
+function compareBy(key: SortKey, a: FileEntry, b: FileEntry): number {
+  const numeric = (x: number | null, y: number | null) => (x ?? 0) - (y ?? 0);
+
+  switch (key) {
+    case "size":
+      return numeric(a.size, b.size) || collator.compare(a.name, b.name);
+    case "modified":
+      return numeric(a.modifiedAt, b.modifiedAt) || collator.compare(a.name, b.name);
+    case "created":
+      return numeric(a.createdAt, b.createdAt) || collator.compare(a.name, b.name);
+    case "kind": {
+      const ext = (e: FileEntry) => {
+        const i = e.name.lastIndexOf(".");
+        return i > 0 ? e.name.slice(i + 1).toLowerCase() : "";
+      };
+      return collator.compare(ext(a), ext(b)) || collator.compare(a.name, b.name);
+    }
+    case "name":
+    default:
+      return collator.compare(a.name, b.name);
+  }
+}
+
+/**
+ * Sorts a listing. Directories are always grouped ahead of files regardless of
+ * the key or direction: a dual-pane manager is used for navigating, and burying
+ * the folders under a size sort makes that harder rather than easier.
+ */
+export function sortEntries(entries: FileEntry[], sort: SortOrder): FileEntry[] {
+  const dir = (e: FileEntry) => (e.kind === "directory" ? 0 : 1);
+  return [...entries].sort((a, b) => {
+    const grouped = dir(a) - dir(b);
+    if (grouped !== 0) return grouped;
+
+    // Entries with nothing to compare go last in *both* directions. Folding this
+    // into the comparison instead would let the descending negation flip them to
+    // the top, which reads as though they sorted highest.
+    const aMissing = sortValue(sort.key, a) === null;
+    const bMissing = sortValue(sort.key, b) === null;
+    if (aMissing !== bMissing) return aMissing ? 1 : -1;
+
+    const cmp = compareBy(sort.key, a, b);
+    return sort.ascending ? cmp : -cmp;
+  });
+}
+
 export const visibleEntries = (paneState: PaneState): FileEntry[] => {
   const needle = paneState.filter.trim().toLowerCase();
   const wanted = paneState.showHidden
     ? paneState.entries
     : paneState.entries.filter((e) => !e.hidden);
-  if (!needle) return wanted;
-  return wanted.filter((e) => e.name.toLowerCase().includes(needle));
+  const matched = needle
+    ? wanted.filter((e) => e.name.toLowerCase().includes(needle))
+    : wanted;
+  return sortEntries(matched, paneState.sort);
 };
 
 /**
@@ -180,6 +262,7 @@ const defaultPaneState = (path: string): PaneState => ({
   isEditingPath: false,
   filter: "",
   showHidden: false,
+  sort: { key: "name", ascending: true },
   dirSizes: {},
 });
 
@@ -460,6 +543,26 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
 
   clearFilter: (pane) => {
     get().setFilter(pane, "");
+  },
+
+  setSort: (pane, key) => {
+    set((state) => {
+      const paneState = state.panes[pane];
+      const sort: SortOrder =
+        paneState.sort.key === key
+          ? { key, ascending: !paneState.sort.ascending }
+          : { key, ascending: true };
+
+      // Rows move, so follow the entry the cursor was on rather than its index.
+      const anchor = entryAtCursor(paneState)?.path ?? null;
+      const next = { ...paneState, sort };
+      let cursor = paneState.cursor;
+      if (anchor) {
+        const i = visibleEntries(next).findIndex((e) => e.path === anchor);
+        if (i >= 0) cursor = i + 1;
+      }
+      return { panes: { ...state.panes, [pane]: { ...next, cursor } } };
+    });
   },
 
   toggleHidden: (pane) => {
