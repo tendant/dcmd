@@ -665,6 +665,7 @@ dependencies = [
 name = "dcmd"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "open",
  "serde",
  "serde_json",
@@ -674,6 +675,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.19",
  "trash",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

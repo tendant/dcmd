@@ -29,6 +29,15 @@ trash = "5"
 # success even when nothing can open the file.
 open = "5"
 
+[target.'cfg(unix)'.dependencies]
+# For renamex_np / renameat2: an atomic rename that refuses to clobber, which
+# std does not expose.
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+# MoveFileExW without MOVEFILE_REPLACE_EXISTING, for the same reason.
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 tempfile = "3"
 

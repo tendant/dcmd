@@ -170,7 +170,9 @@ static STAGE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::n
 /// A hidden sibling of `dest` to assemble the replacement in.
 ///
 /// A sibling specifically, so it lands on the same filesystem and the final swap
-/// is a rename rather than another copy.
+/// is a rename rather than another copy. The suffix is kept short because Windows
+/// caps paths at 260 characters without long-path support, and a staging name
+/// that is longer than the target could fail where a direct write would not.
 fn staging_path(dest: &Path) -> Result<PathBuf, FsError> {
     let parent = dest.parent().unwrap_or(Path::new("."));
     let base = dest
@@ -179,7 +181,7 @@ fn staging_path(dest: &Path) -> Result<PathBuf, FsError> {
         .unwrap_or_else(|| "item".to_string());
     for _ in 0..1000 {
         let n = STAGE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let candidate = parent.join(format!(".{base}.dcmd-incoming-{n}"));
+        let candidate = parent.join(format!(".{base}.dcmd~{n}"));
         if !candidate.exists() {
             return Ok(candidate);
         }

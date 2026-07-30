@@ -18,14 +18,9 @@ pub fn rename_entry(path: &Path, new_name: &str) -> Result<FileEntry, FsError> {
 
     let new_path = parent.join(new_name);
 
-    if new_path.exists() {
-        return Err(FsError::AlreadyExists(format!(
-            "target already exists: {}",
-            new_path.display()
-        )));
-    }
-
-    std::fs::rename(path, &new_path)?;
+    // Atomic where the OS allows it: a plain rename would silently replace
+    // anything created at that name between a check and the call.
+    crate::fs::rename_no_replace(path, &new_path)?;
 
     let metadata = std::fs::metadata(&new_path)?;
     crate::fs::entry::build_entry(&new_path, new_name.to_string(), &metadata, crate::fs::paths::is_hidden(new_name))
