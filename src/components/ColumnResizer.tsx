@@ -7,6 +7,14 @@ import {
 } from "../state/fileManagerStore";
 
 /**
+ * Geometry of the handle, shared with the spacer FileRow puts in its place.
+ * Kept in one constant because the two are flex children of lists that must line
+ * up, and hand-matching the widths in two files is how they drift apart.
+ */
+export const COLUMN_HANDLE_CLASS = "mx-1 w-2 shrink-0";
+
+
+/**
  * The grab handle on a column's leading edge.
  *
  * Size and Modified are right-aligned at the end of the row, so dragging the
@@ -73,9 +81,18 @@ export function ColumnResizer({ column }: { column: ResizableColumn }) {
         }
       }}
       title="Drag to resize, double-click to reset"
-      className={`mx-0.5 w-1 shrink-0 cursor-col-resize self-stretch rounded ${
-        dragging ? "bg-blue-500" : "bg-transparent hover:bg-blue-400"
-      } focus:outline-none focus-visible:bg-blue-500`}
-    />
+      className={`${COLUMN_HANDLE_CLASS} group flex cursor-col-resize items-stretch justify-center self-stretch focus:outline-none`}
+    >
+      {/* A visible rule inside a wider grab area: the line has to be thin to read
+          as a divider, but a 1px target is unusable. */}
+      <span
+        aria-hidden
+        className={`w-px transition-colors ${
+          dragging
+            ? "bg-blue-500"
+            : "bg-gray-300 group-hover:bg-blue-400 group-focus-visible:bg-blue-500 dark:bg-gray-600"
+        }`}
+      />
+    </div>
   );
 }

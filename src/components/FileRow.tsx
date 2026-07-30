@@ -2,6 +2,7 @@ import { FileEntry } from "../types/fileEntry";
 import { useFileManagerStore, PaneId } from "../state/fileManagerStore";
 import { RenameInput } from "./RenameInput";
 import { formatBytes, formatTimestamp } from "../format";
+import { COLUMN_HANDLE_CLASS } from "./ColumnResizer";
 
 interface FileRowProps {
   entry: FileEntry;
@@ -161,14 +162,14 @@ export function FileRow({
       {/* Mirrors the resize handle in the header, so the columns stay aligned:
           the handle is a flex child there and would otherwise offset every
           heading relative to its column. */}
-      <span className="mx-0.5 w-1 shrink-0" aria-hidden />
+      <span className={COLUMN_HANDLE_CLASS} aria-hidden />
       <span
         style={{ width: columnWidths.size }}
         className="shrink-0 text-right text-xs tabular-nums text-gray-500 dark:text-gray-400"
       >
         {isParentDirectory ? "" : sizeLabel}
       </span>
-      <span className="mx-0.5 w-1 shrink-0" aria-hidden />
+      <span className={COLUMN_HANDLE_CLASS} aria-hidden />
       <span
         style={{ width: columnWidths.modified }}
         className="shrink-0 text-right text-xs tabular-nums text-gray-500 dark:text-gray-400"
