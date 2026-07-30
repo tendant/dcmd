@@ -180,6 +180,15 @@ export interface FileManagerState {
   cancelTransfer: () => void;
 }
 
+/**
+ * The directory above `path`, or null at the root. Shared so that anything
+ * offering to go up agrees with what going up actually does.
+ */
+export const parentPath = (path: string): string | null => {
+  const parent = path.split("/").slice(0, -1).join("/") || "/";
+  return parent === path ? null : parent;
+};
+
 /** Monotonic id source; Date.now() would collide on fast successive transfers. */
 let transferSeq = 1;
 
@@ -423,13 +432,8 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
 
   goToParent: async (pane) => {
     const state = get();
-    const currentPath = state.panes[pane].path;
-    const parent = currentPath
-      .split("/")
-      .slice(0, -1)
-      .join("/") || "/";
-
-    if (parent !== currentPath) {
+    const parent = parentPath(state.panes[pane].path);
+    if (parent) {
       await state.navigate(pane, parent);
     }
   },

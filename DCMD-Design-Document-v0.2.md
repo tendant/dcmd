@@ -180,6 +180,9 @@ mouse.
 
 -   Right-clicking a row that is not in the selection selects it first, so the
     menu can never describe acting on something the click did not hit
+-   Right-clicking ".." gives the folder menu. A directory with enough rows to
+    leave no blank space would otherwise offer no way to reach those actions
+    from the list, and that row is always present
 -   With several items selected the labels name the count — a menu reading
     "Copy a.txt" while about to copy twelve files is lying
 -   Rename is disabled for a multi-selection rather than silently acting on one

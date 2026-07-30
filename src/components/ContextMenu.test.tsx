@@ -124,3 +124,15 @@ describe("ContextMenu", () => {
     expect(ev.defaultPrevented).toBe(true);
   });
 });
+
+describe("the '..' row", () => {
+  // A directory full enough to have no blank space below the rows would
+  // otherwise leave no way to reach the folder actions from the list.
+  it("opens the folder menu rather than the row menu", () => {
+    openAt(10, 10, null);
+    render(<ContextMenu />);
+    expect(screen.getByText("New folder")).toBeInTheDocument();
+    expect(screen.getByText("Go up")).toBeInTheDocument();
+    expect(screen.queryByText("Rename…")).not.toBeInTheDocument();
+  });
+});

@@ -16,7 +16,7 @@ vi.mock("../tauri/commands", () => ({
 }));
 
 import * as commands from "../tauri/commands";
-import { entryAtCursor, useFileManagerStore, visibleEntries } from "./fileManagerStore";
+import { entryAtCursor, parentPath, useFileManagerStore, visibleEntries } from "./fileManagerStore";
 import type { FileEntry } from "../types/fileEntry";
 
 const entry = (name: string): FileEntry => ({
@@ -781,5 +781,18 @@ describe("pane sizing", () => {
     useFileManagerStore.setState({ activePane: "left" });
     useFileManagerStore.getState().toggleCollapse("right");
     expect(useFileManagerStore.getState().activePane).toBe("left");
+  });
+});
+
+describe("parentPath", () => {
+  it("returns the directory above", () => {
+    expect(parentPath("/a/b/c")).toBe("/a/b");
+    expect(parentPath("/a")).toBe("/");
+  });
+
+  // The context menu decides whether to offer "Go up" from this, so the two
+  // must agree about where the top is.
+  it("returns null at the root", () => {
+    expect(parentPath("/")).toBeNull();
   });
 });

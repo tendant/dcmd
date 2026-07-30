@@ -1,6 +1,7 @@
 import { DEL, MOD, SHIFT } from "../platform";
 import {
   entryAtCursor,
+  parentPath,
   visibleEntries,
   type ContextMenuState,
   type FileManagerState,
@@ -55,8 +56,18 @@ export function buildMenuItems(state: FileManagerState, menu: ContextMenuState):
   const other = pane === "left" ? "right" : "left";
   const selectionCount = paneState.selected.size;
 
+  const parent = parentPath(paneState.path);
+
   const common: MenuItem[] = [
     { kind: "separator" },
+    {
+      kind: "action",
+      label: "Go up",
+      shortcut: DEL,
+      // Nothing above the root, and offering it there would be a no-op.
+      disabled: parent === null,
+      run: () => state.goToParent(pane),
+    },
     {
       kind: "action",
       label: "New folder",

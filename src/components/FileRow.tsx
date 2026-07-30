@@ -80,7 +80,17 @@ export function FileRow({
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (isParentDirectory) return;
+
+    // ".." is not a real entry, so it gets the folder menu rather than nothing.
+    // A directory full enough to have no blank space below the rows would
+    // otherwise leave no way to reach those actions from the list at all, and
+    // this row is always present.
+    if (isParentDirectory) {
+      setActivePane(paneId);
+      openContextMenu({ x: e.clientX, y: e.clientY, pane: paneId, path: null });
+      return;
+    }
+
     // Right-clicking a row that is not part of the selection acts on that row,
     // so the menu can never describe acting on something the click did not hit.
     if (!paneState.selected.has(entry.path)) {

@@ -225,3 +225,24 @@ describe("actions are wired to the real store", () => {
     expect(spy).toHaveBeenCalledWith("left");
   });
 });
+
+describe("going up", () => {
+  const folderMenu = () =>
+    buildMenuItems(useFileManagerStore.getState(), { x: 0, y: 0, pane: "left", path: null });
+
+  it("is offered from the folder menu", () => {
+    expect(find(folderMenu(), "Go up")).toBeTruthy();
+  });
+
+  it("is disabled at the root, where there is nowhere to go", () => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: { ...s.panes, left: { ...s.panes.left, path: "/" } },
+    });
+    expect((find(folderMenu(), "Go up") as any).disabled).toBe(true);
+  });
+
+  it("is enabled below the root", () => {
+    expect((find(folderMenu(), "Go up") as any).disabled).toBe(false);
+  });
+});
