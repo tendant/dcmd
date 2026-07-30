@@ -75,23 +75,29 @@ pub fn validate_name(name: &str) -> Result<(), FsError> {
     Ok(())
 }
 
-pub fn is_hidden(name: &str) -> bool {
-    #[cfg(unix)]
-    {
-        name.starts_with('.')
-    }
+/// Whether an entry should be treated as hidden.
+///
+/// Unix uses the leading dot. Windows marks hidden entries with a file
+/// attribute instead, and honouring only the dot convention there would both
+/// miss genuinely hidden files (desktop.ini, System Volume Information) and
+/// leave the user unable to hide them. Dot-prefixed names still count on
+/// Windows, since developer trees are full of .git and .env regardless of
+/// platform.
+pub fn is_hidden(name: &str, metadata: Option<&std::fs::Metadata>) -> bool {
     #[cfg(windows)]
     {
-        use std::fs;
         use std::os::windows::fs::MetadataExt;
-        // Windows hidden files are handled via the FILE_ATTRIBUTE_HIDDEN flag
-        // For now, just check if it starts with a dot (Unix convention)
-        name.starts_with('.')
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x0000_0002;
+        if let Some(m) = metadata {
+            if m.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0 {
+                return true;
+            }
+        }
     }
-    #[cfg(not(any(unix, windows)))]
-    {
-        name.starts_with('.')
-    }
+    #[cfg(not(windows))]
+    let _ = metadata;
+
+    name.starts_with('.')
 }
 
 #[cfg(test)]
@@ -118,10 +124,19 @@ mod tests {
 
     #[test]
     fn test_is_hidden() {
-        assert!(is_hidden(".hidden"));
-        assert!(is_hidden(".config"));
-        assert!(!is_hidden("visible"));
-        assert!(!is_hidden("file.txt"));
+        assert!(is_hidden(".hidden", None));
+        assert!(is_hidden(".config", None));
+        assert!(!is_hidden("visible", None));
+        assert!(!is_hidden("file.txt", None));
+    }
+
+    #[test]
+    fn dot_prefixed_names_are_hidden_on_every_platform() {
+        // Windows has no dotfile convention, but .git and .env are everywhere in
+        // developer trees and users expect them to hide with the rest.
+        for n in [".git", ".env", ".gitignore"] {
+            assert!(is_hidden(n, None), "{n} should be hidden");
+        }
     }
 }
 

@@ -83,6 +83,12 @@ cargo fmt --check
 CI runs all of the above, with the Rust suite across Linux, macOS and Windows —
 the filesystem behaviour is what differs between them.
 
+`./scripts/check-platforms.sh` cross-compiles the cfg-gated filesystem code for
+Linux and Windows. The full crate cannot be cross-checked from macOS, because
+tauri-winres needs llvm-rc for the Windows resource step, so the platform files
+are extracted into a throwaway crate instead. Run it before pushing changes to
+platform-specific code — otherwise CI is the first thing that compiles them.
+
 `DCMD_TRACE_STARTUP=1` makes a release build report startup milestones to
 stderr. Startup currently misses the design document's sub-100ms target; the
 measurements and where the time goes are recorded there.

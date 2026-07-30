@@ -69,8 +69,8 @@ pub fn read_dir_entries(dir_path: &Path) -> Result<Vec<FileEntry>, FsError> {
         let path = entry.path();
         let name = entry.file_name();
         let name_str = name.to_string_lossy().to_string();
-        let hidden = is_hidden(&name_str);
         let metadata = entry.metadata()?;
+        let hidden = is_hidden(&name_str, Some(&metadata));
 
         let file_entry = build_entry(&path, name_str, &metadata, hidden)?;
         entries.push(file_entry);

@@ -30,7 +30,7 @@ pub fn rename_entry(path: &Path, new_name: &str) -> Result<FileEntry, FsError> {
         &new_path,
         new_name.to_string(),
         &metadata,
-        crate::fs::paths::is_hidden(new_name),
+        crate::fs::paths::is_hidden(new_name, Some(&metadata)),
     )
     .map_err(|e| FsError::Io(e.to_string()))
 }
