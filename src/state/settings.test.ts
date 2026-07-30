@@ -12,6 +12,7 @@ const base = (): Settings => ({
   splitRatio: 0.5,
   left: { sortKey: "name", sortAscending: true, showHidden: false },
   right: { sortKey: "name", sortAscending: true, showHidden: false },
+  columns: { size: 64, modified: 64 },
 });
 
 beforeEach(() => {
@@ -106,5 +107,23 @@ describe("settingsEqual", () => {
 
   it("notices a real difference", () => {
     expect(settingsEqual(base(), { ...base(), splitRatio: 0.6 })).toBe(false);
+  });
+});
+
+describe("column widths persist", () => {
+  it("are captured for saving", () => {
+    useFileManagerStore.setState({ columnWidths: { size: 90, modified: 120 } });
+    expect(settingsFrom(useFileManagerStore.getState()).columns).toEqual({
+      size: 90,
+      modified: 120,
+    });
+  });
+
+  it("are restored on load", () => {
+    useFileManagerStore.getState().applySettings({
+      ...base(),
+      columns: { size: 110, modified: 75 },
+    });
+    expect(useFileManagerStore.getState().columnWidths).toEqual({ size: 110, modified: 75 });
   });
 });

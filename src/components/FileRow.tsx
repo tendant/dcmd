@@ -37,6 +37,7 @@ export function FileRow({
   const openContextMenu = useFileManagerStore((s) => s.openContextMenu);
   const clearSelection = useFileManagerStore((s) => s.clearSelection);
   const setActivePane = useFileManagerStore((s) => s.setActivePane);
+  const columnWidths = useFileManagerStore((s) => s.columnWidths);
 
   if (isRenaming) {
     return (
@@ -157,10 +158,21 @@ export function FileRow({
     >
       <span className="w-4 shrink-0">{icon}</span>
       <span className="flex-1 truncate">{entry.name}</span>
-      <span className="w-16 shrink-0 text-right text-xs tabular-nums text-gray-500 dark:text-gray-400">
+      {/* Mirrors the resize handle in the header, so the columns stay aligned:
+          the handle is a flex child there and would otherwise offset every
+          heading relative to its column. */}
+      <span className="mx-0.5 w-1 shrink-0" aria-hidden />
+      <span
+        style={{ width: columnWidths.size }}
+        className="shrink-0 text-right text-xs tabular-nums text-gray-500 dark:text-gray-400"
+      >
         {isParentDirectory ? "" : sizeLabel}
       </span>
-      <span className="w-16 shrink-0 text-right text-xs tabular-nums text-gray-500 dark:text-gray-400">
+      <span className="mx-0.5 w-1 shrink-0" aria-hidden />
+      <span
+        style={{ width: columnWidths.modified }}
+        className="shrink-0 text-right text-xs tabular-nums text-gray-500 dark:text-gray-400"
+      >
         {isParentDirectory ? "" : formatTimestamp(entry.modifiedAt)}
       </span>
     </div>

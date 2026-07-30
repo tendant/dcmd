@@ -82,6 +82,10 @@ whole batch with one message.
 platform config directory. A corrupt or hand-edited file falls back to defaults
 rather than failing to start.
 
+**The Size and Modified columns are resizable** — drag the handle on the left
+edge of either, or double-click a handle to reset both. Widths are shared by
+the panes and persist.
+
 **Sorting is per pane**, with folders always grouped first. Entries with nothing
 to compare — directories have no size, creation time is missing on some
 filesystems — sort last whichever direction is chosen.

@@ -97,6 +97,13 @@ export interface ActiveTransfer {
 export const MIN_SPLIT = 0.15;
 export const MAX_SPLIT = 1 - MIN_SPLIT;
 
+export type ResizableColumn = "size" | "modified";
+
+/** Pixels, not a fraction: these size their content, not the window. */
+export const DEFAULT_COLUMN_WIDTH = 64;
+export const MIN_COLUMN_WIDTH = 40;
+export const MAX_COLUMN_WIDTH = 240;
+
 export interface ContextMenuState {
   x: number;
   y: number;
@@ -118,6 +125,9 @@ export interface FileManagerState {
   /** Open context menu, if any. Holds a path rather than an entry so it cannot
    * go stale if the listing refreshes underneath it. */
   contextMenu: ContextMenuState | null;
+  /** Widths of the two fixed columns. Shared by both panes, since they are a
+   * property of the layout rather than of what a pane is showing. */
+  columnWidths: Record<ResizableColumn, number>;
   dialog: DialogState | null;
   transfer: ActiveTransfer | null;
 
@@ -135,6 +145,8 @@ export interface FileManagerState {
   resetSplit: () => void;
   /** Hides a pane, or restores it if it is the one already hidden. */
   toggleCollapse: (pane: PaneId) => void;
+  setColumnWidth: (column: ResizableColumn, px: number) => void;
+  resetColumnWidths: () => void;
   openContextMenu: (menu: ContextMenuState) => void;
   closeContextMenu: () => void;
   revealEntry: (pane: PaneId, path: string) => Promise<void>;
@@ -327,6 +339,18 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   splitRatio: 0.5,
   collapsed: null,
   contextMenu: null,
+  columnWidths: { size: DEFAULT_COLUMN_WIDTH, modified: DEFAULT_COLUMN_WIDTH },
+
+  setColumnWidth: (column, px) =>
+    set((state) => ({
+      columnWidths: {
+        ...state.columnWidths,
+        [column]: Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, Math.round(px))),
+      },
+    })),
+
+  resetColumnWidths: () =>
+    set({ columnWidths: { size: DEFAULT_COLUMN_WIDTH, modified: DEFAULT_COLUMN_WIDTH } }),
 
   openContextMenu: (menu) => set({ contextMenu: menu }),
   closeContextMenu: () => set({ contextMenu: null }),
@@ -352,6 +376,8 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         // Already clamped and validated by the backend; a hand-edited file
         // cannot put the UI into a state it has no way out of.
         splitRatio: settings.splitRatio,
+        // Already clamped by the backend.
+        columnWidths: { size: settings.columns.size, modified: settings.columns.modified },
         panes: {
           left: forPane("left", settings.left),
           right: forPane("right", settings.right),

@@ -17,6 +17,7 @@ export function settingsFrom(state: FileManagerState): Settings {
       sortAscending: state.panes.right.sort.ascending,
       showHidden: state.panes.right.showHidden,
     },
+    columns: { ...state.columnWidths },
   };
 }
 

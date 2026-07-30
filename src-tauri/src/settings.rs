@@ -33,6 +33,28 @@ impl Default for PaneSettings {
     }
 }
 
+/// Column widths in pixels. Pixels rather than a fraction, because these size
+/// their content — a date needs the same room whatever the window is doing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ColumnWidths {
+    pub size: f64,
+    pub modified: f64,
+}
+
+pub const DEFAULT_COLUMN_WIDTH: f64 = 64.0;
+pub const MIN_COLUMN_WIDTH: f64 = 40.0;
+pub const MAX_COLUMN_WIDTH: f64 = 240.0;
+
+impl Default for ColumnWidths {
+    fn default() -> Self {
+        Self {
+            size: DEFAULT_COLUMN_WIDTH,
+            modified: DEFAULT_COLUMN_WIDTH,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -42,6 +64,7 @@ pub struct Settings {
     pub split_ratio: f64,
     pub left: PaneSettings,
     pub right: PaneSettings,
+    pub columns: ColumnWidths,
 }
 
 impl Default for Settings {
@@ -51,6 +74,7 @@ impl Default for Settings {
             split_ratio: default_split(),
             left: PaneSettings::default(),
             right: PaneSettings::default(),
+            columns: ColumnWidths::default(),
         }
     }
 }
@@ -73,6 +97,15 @@ impl Settings {
                 pane.sort_key = default_sort_key();
             }
         }
+        let clamp_col = |w: f64| {
+            if w.is_finite() {
+                w.clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH)
+            } else {
+                DEFAULT_COLUMN_WIDTH
+            }
+        };
+        self.columns.size = clamp_col(self.columns.size);
+        self.columns.modified = clamp_col(self.columns.modified);
         self.version = CURRENT_VERSION;
         self
     }
@@ -180,6 +213,41 @@ mod tests {
         assert!(parse(r#"{"splitRatio": 0.0}"#).split_ratio >= 0.15);
         assert!(parse(r#"{"splitRatio": 1.0}"#).split_ratio <= 0.85);
         assert!(parse(r#"{"splitRatio": -5}"#).split_ratio >= 0.15);
+    }
+
+    #[test]
+    fn a_column_width_that_would_hide_or_swamp_a_column_is_clamped() {
+        assert_eq!(
+            parse(r#"{"columns":{"size":0}}"#).columns.size,
+            MIN_COLUMN_WIDTH
+        );
+        assert_eq!(
+            parse(r#"{"columns":{"size":99999}}"#).columns.size,
+            MAX_COLUMN_WIDTH
+        );
+        assert_eq!(
+            parse(r#"{"columns":{"modified":-3}}"#).columns.modified,
+            MIN_COLUMN_WIDTH
+        );
+    }
+
+    #[test]
+    fn column_widths_round_trip() {
+        let s = Settings {
+            columns: ColumnWidths {
+                size: 90.0,
+                modified: 120.0,
+            },
+            ..Settings::default()
+        };
+        assert_eq!(parse(&serialise(&s)).columns, s.columns);
+    }
+
+    #[test]
+    fn a_file_from_before_columns_existed_still_loads() {
+        let s = parse(r#"{"splitRatio": 0.6, "left": {"sortKey": "size"}}"#);
+        assert_eq!(s.columns, ColumnWidths::default());
+        assert_eq!(s.left.sort_key, "size");
     }
 
     #[test]

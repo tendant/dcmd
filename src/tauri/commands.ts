@@ -37,11 +37,17 @@ export interface PaneSettings {
   showHidden: boolean;
 }
 
+export interface ColumnWidths {
+  size: number;
+  modified: number;
+}
+
 export interface Settings {
   version: number;
   splitRatio: number;
   left: PaneSettings;
   right: PaneSettings;
+  columns: ColumnWidths;
 }
 
 export interface StartupInfo {

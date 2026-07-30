@@ -116,6 +116,10 @@ regardless of the key, since burying folders under a size sort makes navigating
 harder rather than easier.
 
 -   Clickable column headers, showing the active key and direction
+-   Size and Modified are resizable by dragging the handle on their leading
+    edge; double-clicking a handle resets both. Widths are in pixels rather than
+    a fraction, since these size their content rather than the window, and are
+    clamped so a column can neither vanish nor squeeze out the name
 -   `Cmd/Ctrl+1..5` selects a key; pressing the active one reverses it
 -   Names compare numerically, so `file2` precedes `file10`
 -   The cursor follows its entry when the order changes, not its index

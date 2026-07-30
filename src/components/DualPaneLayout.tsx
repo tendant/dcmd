@@ -22,6 +22,7 @@ export function DualPaneLayout() {
       <div ref={containerRef} className="flex flex-1 overflow-hidden">
         {showLeft && (
           <div
+            data-pane="left"
             style={showRight ? { width: `${splitRatio * 100}%` } : undefined}
             className={showRight ? "min-w-0" : "min-w-0 flex-1"}
           >
@@ -30,7 +31,7 @@ export function DualPaneLayout() {
         )}
         {showLeft && showRight && <PaneDivider containerRef={containerRef} />}
         {showRight && (
-          <div className="min-w-0 flex-1">
+          <div data-pane="right" className="min-w-0 flex-1">
             <Pane paneId="right" />
           </div>
         )}
