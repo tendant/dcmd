@@ -8,7 +8,8 @@ import { useFileManagerStore } from "./fileManagerStore";
 import type { Settings } from "../tauri/commands";
 
 const base = (): Settings => ({
-  version: 1,
+  version: 2,
+  bookmarks: [],
   splitRatio: 0.5,
   left: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 64, modified: 64 } },
   right: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 64, modified: 64 } },
@@ -133,5 +134,30 @@ describe("column widths persist per pane", () => {
     const s = useFileManagerStore.getState();
     expect(s.panes.left.columnWidths).toEqual({ size: 110, modified: 75 });
     expect(s.panes.right.columnWidths).toEqual({ size: 55, modified: 180 });
+  });
+});
+
+describe("bookmarks persist", () => {
+  it("are captured for saving", () => {
+    useFileManagerStore.setState({ bookmarks: [{ name: "Code", path: "/c" }] });
+    expect(settingsFrom(useFileManagerStore.getState()).bookmarks).toEqual([
+      { name: "Code", path: "/c" },
+    ]);
+  });
+
+  it("are restored on load", () => {
+    useFileManagerStore.getState().applySettings({
+      ...base(),
+      bookmarks: [{ name: "Docs", path: "/d" }],
+    });
+    expect(useFileManagerStore.getState().bookmarks).toEqual([{ name: "Docs", path: "/d" }]);
+  });
+
+  // A file written before bookmarks existed has no such field.
+  it("tolerate an older file with no bookmarks at all", () => {
+    const older = { ...base() } as any;
+    delete older.bookmarks;
+    useFileManagerStore.getState().applySettings(older);
+    expect(useFileManagerStore.getState().bookmarks).toEqual([]);
   });
 });

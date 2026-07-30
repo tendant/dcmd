@@ -19,5 +19,5 @@ export const commandMocks = {
   cancelTransfer: vi.fn(async () => undefined),
   markStartup: vi.fn(async () => undefined),
   saveSettings: vi.fn(async () => undefined),
-  startupInfo: vi.fn(async () => ({ startDir: "/", settings: { version: 1, splitRatio: 0.5, left: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 64, modified: 64 } }, right: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 64, modified: 64 } } } })),
+  startupInfo: vi.fn(async () => ({ startDir: "/", settings: { version: 1, splitRatio: 0.5, left: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 64, modified: 64 } }, right: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 64, modified: 64 } }, bookmarks: [] } })),
 };

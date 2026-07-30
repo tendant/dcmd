@@ -111,6 +111,25 @@ export function useGlobalKeyboard() {
           store.setSort(pane, SORT_KEYS[digit - 1]);
           return;
         }
+        // Back and forward. Cmd+[ / Cmd+] is the macOS convention; Alt+arrows
+        // is the one everywhere else, and both are accepted on either platform.
+        if (key === "[" || (e.altKey && e.key === "ArrowLeft")) {
+          e.preventDefault();
+          store.goBack(pane);
+          return;
+        }
+        if (key === "]" || (e.altKey && e.key === "ArrowRight")) {
+          e.preventDefault();
+          store.goForward(pane);
+          return;
+        }
+        if (key === "d") {
+          e.preventDefault();
+          const path = store.panes[pane].path;
+          if (store.isBookmarked(path)) store.removeBookmark(path);
+          else store.addBookmark(pane);
+          return;
+        }
         if (key === "r") {
           // preventDefault matters here: unhandled, Cmd+R reloads the webview
           // and throws away all pane state.
@@ -118,6 +137,15 @@ export function useGlobalKeyboard() {
           store.refresh(pane);
           return;
         }
+      }
+
+      // Alt+arrows on their own, for the platforms where that is the binding.
+      if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        e.preventDefault();
+        const pane = store.activePane;
+        if (e.key === "ArrowLeft") store.goBack(pane);
+        else store.goForward(pane);
+        return;
       }
 
       switch (e.key) {

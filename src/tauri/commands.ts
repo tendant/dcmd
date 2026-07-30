@@ -43,11 +43,17 @@ export interface ColumnWidths {
   modified: number;
 }
 
+export interface Bookmark {
+  name: string;
+  path: string;
+}
+
 export interface Settings {
   version: number;
   splitRatio: number;
   left: PaneSettings;
   right: PaneSettings;
+  bookmarks: Bookmark[];
 }
 
 export interface StartupInfo {

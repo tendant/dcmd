@@ -62,6 +62,20 @@ export function buildMenuItems(state: FileManagerState, menu: ContextMenuState):
     { kind: "separator" },
     {
       kind: "action",
+      label: "Back",
+      shortcut: `${MOD}[`,
+      disabled: !state.canGoBack(pane),
+      run: () => state.goBack(pane),
+    },
+    {
+      kind: "action",
+      label: "Forward",
+      shortcut: `${MOD}]`,
+      disabled: !state.canGoForward(pane),
+      run: () => state.goForward(pane),
+    },
+    {
+      kind: "action",
       label: "Go up",
       shortcut: DEL,
       // Nothing above the root, and offering it there would be a no-op.
@@ -76,6 +90,29 @@ export function buildMenuItems(state: FileManagerState, menu: ContextMenuState):
     },
     { kind: "action", label: "Refresh", shortcut: `${MOD}R`, run: () => state.refresh(pane) },
     { kind: "separator" },
+    {
+      kind: "submenu",
+      label: "Bookmarks",
+      items: [
+        {
+          kind: "action" as const,
+          label: state.isBookmarked(paneState.path)
+            ? "Remove this folder"
+            : "Bookmark this folder",
+          shortcut: `${MOD}D`,
+          run: () =>
+            state.isBookmarked(paneState.path)
+              ? state.removeBookmark(paneState.path)
+              : state.addBookmark(pane),
+        },
+        ...(state.bookmarks.length > 0 ? [{ kind: "separator" as const }] : []),
+        ...state.bookmarks.map((b) => ({
+          kind: "action" as const,
+          label: b.name,
+          run: () => state.navigate(pane, b.path),
+        })),
+      ],
+    },
     {
       kind: "submenu",
       label: "Sort by",

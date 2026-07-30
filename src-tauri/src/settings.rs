@@ -57,6 +57,16 @@ impl Default for ColumnWidths {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Bookmark {
+    pub name: String,
+    pub path: String,
+}
+
+/// Enough to be useful without the list becoming something to scroll.
+pub const MAX_BOOKMARKS: usize = 30;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -66,6 +76,8 @@ pub struct Settings {
     pub split_ratio: f64,
     pub left: PaneSettings,
     pub right: PaneSettings,
+    #[serde(default)]
+    pub bookmarks: Vec<Bookmark>,
     /// Version 1 kept one set of column widths for both panes. Retained only so
     /// an existing file can be migrated; never written back.
     #[serde(skip_serializing)]
@@ -79,6 +91,7 @@ impl Default for Settings {
             split_ratio: default_split(),
             left: PaneSettings::default(),
             right: PaneSettings::default(),
+            bookmarks: Vec::new(),
             columns: None,
         }
     }
@@ -123,6 +136,14 @@ impl Settings {
             pane.columns.size = clamp_col(pane.columns.size);
             pane.columns.modified = clamp_col(pane.columns.modified);
         }
+        // A bookmark with no path cannot be navigated to, and duplicates would
+        // stack up invisibly; both are cheap to drop here rather than guard
+        // against everywhere they are used.
+        let mut seen = std::collections::HashSet::new();
+        self.bookmarks
+            .retain(|b| !b.path.trim().is_empty() && seen.insert(b.path.clone()));
+        self.bookmarks.truncate(MAX_BOOKMARKS);
+
         self.version = CURRENT_VERSION;
         self
     }
@@ -304,6 +325,52 @@ mod tests {
         let s = parse(r#"{"splitRatio": 0.6, "left": {"sortKey": "size"}}"#);
         assert_eq!(s.left.columns, ColumnWidths::default());
         assert_eq!(s.left.sort_key, "size");
+    }
+
+    #[test]
+    fn bookmarks_round_trip() {
+        let s = Settings {
+            bookmarks: vec![
+                Bookmark {
+                    name: "Home".into(),
+                    path: "/Users/x".into(),
+                },
+                Bookmark {
+                    name: "Code".into(),
+                    path: "/Users/x/code".into(),
+                },
+            ],
+            ..Settings::default()
+        };
+        assert_eq!(parse(&serialise(&s)).bookmarks, s.bookmarks);
+    }
+
+    #[test]
+    fn bookmarks_without_a_path_are_dropped() {
+        let s = parse(r#"{"bookmarks":[{"name":"broken","path":""},{"name":"ok","path":"/a"}]}"#);
+        assert_eq!(s.bookmarks.len(), 1);
+        assert_eq!(s.bookmarks[0].path, "/a");
+    }
+
+    #[test]
+    fn duplicate_bookmarks_are_collapsed() {
+        let s = parse(r#"{"bookmarks":[{"name":"a","path":"/a"},{"name":"again","path":"/a"}]}"#);
+        assert_eq!(s.bookmarks.len(), 1);
+        assert_eq!(s.bookmarks[0].name, "a");
+    }
+
+    #[test]
+    fn the_bookmark_list_is_capped() {
+        let many: Vec<String> = (0..100)
+            .map(|i| format!(r#"{{"name":"b{i}","path":"/p{i}"}}"#))
+            .collect();
+        let s = parse(&format!(r#"{{"bookmarks":[{}]}}"#, many.join(",")));
+        assert_eq!(s.bookmarks.len(), MAX_BOOKMARKS);
+    }
+
+    #[test]
+    fn a_file_without_bookmarks_still_loads() {
+        assert!(parse(r#"{"splitRatio":0.6}"#).bookmarks.is_empty());
     }
 
     #[test]

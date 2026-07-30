@@ -42,6 +42,10 @@ export interface PaneState {
   showHidden: boolean;
   /** Sort applied to this pane's rows. Per pane, for the same reason. */
   sort: SortOrder;
+  /** Directories visited in this pane, oldest first. */
+  history: string[];
+  /** Position within `history`; entries after it are the forward stack. */
+  historyIndex: number;
   /** Widths of the two fixed columns. Per pane, because the panes can be very
    * different widths once the split is dragged, and a narrow pane needs
    * narrower columns than a wide one. */
@@ -98,6 +102,12 @@ export interface ActiveTransfer {
  * a deliberate action with its own way back, so the divider must not be able to
  * squeeze a pane to nothing by accident.
  */
+/** Cap on remembered directories, so a long session cannot grow without bound. */
+export const HISTORY_LIMIT = 200;
+
+/** Matches the backend cap; the list is a menu, not something to scroll. */
+export const MAX_BOOKMARKS = 30;
+
 export const MIN_SPLIT = 0.15;
 export const MAX_SPLIT = 1 - MIN_SPLIT;
 
@@ -124,6 +134,8 @@ export interface FileManagerState {
    * pixel width, so resizing the window cannot push a pane off-screen.
    */
   splitRatio: number;
+  /** Pinned directories, shared by both panes. */
+  bookmarks: commands.Bookmark[];
   /** Which pane is hidden entirely, if either. */
   collapsed: PaneId | null;
   /** Open context menu, if any. Holds a path rather than an entry so it cannot
@@ -133,7 +145,16 @@ export interface FileManagerState {
   transfer: ActiveTransfer | null;
 
   setActivePane: (pane: PaneId) => void;
-  navigate: (pane: PaneId, path: string) => Promise<void>;
+  /**
+   * `record: false` replays an existing history entry rather than adding one,
+   * which is what going back and forward do — recording there would make the
+   * back button push a new entry and never actually go anywhere.
+   */
+  navigate: (pane: PaneId, path: string, opts?: { record?: boolean }) => Promise<void>;
+  goBack: (pane: PaneId) => Promise<void>;
+  goForward: (pane: PaneId) => Promise<void>;
+  canGoBack: (pane: PaneId) => boolean;
+  canGoForward: (pane: PaneId) => boolean;
   goToParent: (pane: PaneId) => Promise<void>;
   refresh: (pane: PaneId) => Promise<void>;
   setCursor: (pane: PaneId, index: number) => void;
@@ -148,6 +169,10 @@ export interface FileManagerState {
   toggleCollapse: (pane: PaneId) => void;
   setColumnWidth: (pane: PaneId, column: ResizableColumn, px: number) => void;
   resetColumnWidths: (pane: PaneId) => void;
+  /** Pins the pane's current directory. Re-adding an existing one is a no-op. */
+  addBookmark: (pane: PaneId) => void;
+  removeBookmark: (path: string) => void;
+  isBookmarked: (path: string) => boolean;
   openContextMenu: (menu: ContextMenuState) => void;
   closeContextMenu: () => void;
   revealEntry: (pane: PaneId, path: string) => Promise<void>;
@@ -326,6 +351,8 @@ const defaultPaneState = (path: string): PaneState => ({
   renameMode: null,
   isEditingPath: false,
   filter: "",
+  history: [],
+  historyIndex: -1,
   showHidden: false,
   sort: { key: "name", ascending: true },
   columnWidths: { size: DEFAULT_COLUMN_WIDTH, modified: DEFAULT_COLUMN_WIDTH },
@@ -341,6 +368,20 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   splitRatio: 0.5,
   collapsed: null,
   contextMenu: null,
+  bookmarks: [],
+
+  addBookmark: (pane) =>
+    set((state) => {
+      const path = state.panes[pane].path;
+      if (!path || state.bookmarks.some((b) => b.path === path)) return {};
+      const name = path.split("/").filter(Boolean).pop() || path;
+      return { bookmarks: [...state.bookmarks, { name, path }].slice(0, MAX_BOOKMARKS) };
+    }),
+
+  removeBookmark: (path) =>
+    set((state) => ({ bookmarks: state.bookmarks.filter((b) => b.path !== path) })),
+
+  isBookmarked: (path) => get().bookmarks.some((b) => b.path === path),
 
   setColumnWidth: (pane, column, px) =>
     set((state) => ({
@@ -393,6 +434,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         // cannot put the UI into a state it has no way out of.
         // Already clamped and validated by the backend.
         splitRatio: settings.splitRatio,
+        bookmarks: settings.bookmarks ?? [],
         panes: {
           left: forPane("left", settings.left),
           right: forPane("right", settings.right),
@@ -420,16 +462,55 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       return { collapsed, activePane };
     }),
 
-  navigate: async (pane, path) => {
+  canGoBack: (pane) => get().panes[pane].historyIndex > 0,
+  canGoForward: (pane) => {
+    const p = get().panes[pane];
+    return p.historyIndex < p.history.length - 1;
+  },
+
+  goBack: async (pane) => {
+    const state = get();
+    if (!state.canGoBack(pane)) return;
+    const p = state.panes[pane];
+    const target = p.history[p.historyIndex - 1];
+    await state.navigate(pane, target, { record: false });
+    set((s2) => ({
+      panes: { ...s2.panes, [pane]: { ...s2.panes[pane], historyIndex: p.historyIndex - 1 } },
+    }));
+  },
+
+  goForward: async (pane) => {
+    const state = get();
+    if (!state.canGoForward(pane)) return;
+    const p = state.panes[pane];
+    const target = p.history[p.historyIndex + 1];
+    await state.navigate(pane, target, { record: false });
+    set((s2) => ({
+      panes: { ...s2.panes, [pane]: { ...s2.panes[pane], historyIndex: p.historyIndex + 1 } },
+    }));
+  },
+
+  navigate: async (pane, path, opts) => {
     // Abandoning the listing abandons its size walks; stop them server-side too
     // rather than letting them run on for minutes against a directory we left.
     get().cancelAllDirSizes(pane);
 
-    set((state) => ({
+    set((state) => {
+      const previous = state.panes[pane];
+      const record = opts?.record !== false && path !== previous.path;
+      // Navigating somewhere new discards the forward stack, as it does in a
+      // browser: the path not taken is no longer reachable.
+      const history = record
+        ? [...previous.history.slice(0, previous.historyIndex + 1), path].slice(-HISTORY_LIMIT)
+        : previous.history;
+
+      return {
       panes: {
         ...state.panes,
         [pane]: {
           ...state.panes[pane],
+          history,
+          historyIndex: record ? history.length - 1 : previous.historyIndex,
           path,
           loading: true,
           error: null,
@@ -442,7 +523,8 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
           dirSizes: {},
         },
       },
-    }));
+      };
+    });
 
     try {
       const entries = await commands.listDirectory(path);

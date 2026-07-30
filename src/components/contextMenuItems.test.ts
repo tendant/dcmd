@@ -181,7 +181,7 @@ describe("toggles reflect current state", () => {
       pane: "left",
       path: null,
     });
-    const sub = items.find((i) => i.kind === "submenu") as any;
+    const sub = items.find((i) => i.kind === "submenu" && i.label === "Sort by") as any;
     const checked = sub.items.filter((i: any) => i.checked).map((i: any) => i.label);
     expect(checked).toEqual(["Size"]);
   });
@@ -244,5 +244,69 @@ describe("going up", () => {
 
   it("is enabled below the root", () => {
     expect((find(folderMenu(), "Go up") as any).disabled).toBe(false);
+  });
+});
+
+describe("bookmarks in the menu", () => {
+  const folderMenu = () =>
+    buildMenuItems(useFileManagerStore.getState(), { x: 0, y: 0, pane: "left", path: null });
+  const bookmarksSub = () =>
+    folderMenu().find((i) => i.kind === "submenu" && i.label === "Bookmarks") as any;
+
+  it("offers to bookmark the current folder", () => {
+    useFileManagerStore.setState({ bookmarks: [] });
+    expect(bookmarksSub().items[0].label).toBe("Bookmark this folder");
+  });
+
+  it("offers to remove it once bookmarked", () => {
+    useFileManagerStore.setState({ bookmarks: [{ name: "left", path: "/left" }] });
+    expect(bookmarksSub().items[0].label).toBe("Remove this folder");
+  });
+
+  it("lists the saved bookmarks", () => {
+    useFileManagerStore.setState({
+      bookmarks: [
+        { name: "Code", path: "/c" },
+        { name: "Docs", path: "/d" },
+      ],
+    });
+    const labels = bookmarksSub().items.map((i: any) => i.label);
+    expect(labels).toContain("Code");
+    expect(labels).toContain("Docs");
+  });
+
+  it("navigates to a bookmark", () => {
+    const spy = vi.fn();
+    useFileManagerStore.setState({
+      bookmarks: [{ name: "Code", path: "/c" }],
+      navigate: spy as any,
+    });
+    bookmarksSub().items.find((i: any) => i.label === "Code").run();
+    expect(spy).toHaveBeenCalledWith("left", "/c");
+  });
+});
+
+describe("history in the menu", () => {
+  const folderMenu = () =>
+    buildMenuItems(useFileManagerStore.getState(), { x: 0, y: 0, pane: "left", path: null });
+
+  it("disables back and forward with nowhere to go", () => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: { ...s.panes, left: { ...s.panes.left, history: [], historyIndex: -1 } },
+    });
+    expect((find(folderMenu(), "Back") as any).disabled).toBe(true);
+    expect((find(folderMenu(), "Forward") as any).disabled).toBe(true);
+  });
+
+  it("enables back once there is somewhere to return to", () => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: {
+        ...s.panes,
+        left: { ...s.panes.left, history: ["/a", "/b"], historyIndex: 1 },
+      },
+    });
+    expect((find(folderMenu(), "Back") as any).disabled).toBe(false);
   });
 });

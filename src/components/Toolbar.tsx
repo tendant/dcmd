@@ -24,9 +24,11 @@ const GROUPS: { label: string; keys: { keys: string[]; what: string }[] }[] = [
     label: "Navigate",
     keys: [
       { keys: ["Tab"], what: "Other pane" },
+      { keys: [`${MOD}[`, `${MOD}]`], what: "Back / forward" },
       { keys: ["⏎"], what: "Open" },
       { keys: [DEL], what: "Up" },
       { keys: [`${MOD}L`], what: "Edit path" },
+      { keys: [`${MOD}D`], what: "Bookmark" },
       { keys: [`${MOD}R`], what: "Refresh" },
       { keys: [`${MOD}${SHIFT}←→`], what: "Resize" },
       { keys: [`${MOD}0`], what: "Even split" },

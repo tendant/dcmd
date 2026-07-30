@@ -5,8 +5,9 @@ import type { FileManagerState } from "./fileManagerStore";
 /** The parts of the store that outlive a session. */
 export function settingsFrom(state: FileManagerState): Settings {
   return {
-    version: 1,
+    version: 2,
     splitRatio: state.splitRatio,
+    bookmarks: state.bookmarks,
     left: {
       sortKey: state.panes.left.sort.key,
       sortAscending: state.panes.left.sort.ascending,

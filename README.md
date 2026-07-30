@@ -31,6 +31,8 @@ window `pnpm tauri dev` opens. The app says so rather than failing silently.
 | Switch pane | `Tab` |
 | Open file or enter folder | `Enter`, or double-click |
 | Go up | `Backspace` |
+| Back / forward | `⌘[` / `⌘]`, or `Alt+←→` |
+| Bookmark this folder | `⌘D` |
 | Edit path | `⌘L` / `Ctrl+L` |
 | Refresh | `⌘R` / `Ctrl+R` |
 | Select, and size a folder | `Space` |

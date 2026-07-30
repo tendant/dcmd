@@ -89,6 +89,30 @@ No networking. No plugins. No settings.
 -   History
 -   Path bar
 
+## History
+
+Implemented, per pane.
+
+-   `Cmd/Ctrl+[` and `Cmd/Ctrl+]`, or `Alt+←→`, both accepted on every platform
+-   Also in the right-click menu, disabled at either end
+-   Going somewhere new discards the forward stack, as in a browser
+-   Replaying an entry does not record one, or going back would push a new entry
+    and never actually move
+-   Capped at 200 entries so a long session cannot grow without bound
+-   Not persisted: history is about the session, and restoring a forward stack
+    from yesterday would be more confusing than useful
+
+## Bookmarks
+
+Implemented. Pinned directories shared by both panes, in the right-click menu
+under Bookmarks, with `Cmd/Ctrl+D` to pin or unpin the current folder.
+
+-   Named after the folder, which is what people recognise
+-   Stored with the rest of the settings, so they survive a restart
+-   Validated on load: entries with no path are dropped, duplicates collapsed,
+    and the list capped, so a hand-edited file cannot produce a menu that
+    misbehaves
+
 ## Pane sizing
 
 Implemented. The split is draggable, double-clicking the divider evens it up,

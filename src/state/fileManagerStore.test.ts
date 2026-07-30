@@ -796,3 +796,130 @@ describe("parentPath", () => {
     expect(parentPath("/")).toBeNull();
   });
 });
+
+describe("navigation history", () => {
+  beforeEach(() => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: { ...s.panes, left: { ...s.panes.left, path: "", history: [], historyIndex: -1 } },
+    });
+  });
+
+  const go = (p: string) => useFileManagerStore.getState().navigate("left", p);
+  const at = () => useFileManagerStore.getState().panes.left.path;
+
+  it("records each directory visited", async () => {
+    await go("/a");
+    await go("/a/b");
+    const s = useFileManagerStore.getState().panes.left;
+    expect(s.history).toEqual(["/a", "/a/b"]);
+    expect(s.historyIndex).toBe(1);
+  });
+
+  it("goes back and forward", async () => {
+    await go("/a");
+    await go("/a/b");
+    await useFileManagerStore.getState().goBack("left");
+    expect(at()).toBe("/a");
+    await useFileManagerStore.getState().goForward("left");
+    expect(at()).toBe("/a/b");
+  });
+
+  // Recording while replaying would push a new entry and never actually move.
+  it("does not record the entries it replays", async () => {
+    await go("/a");
+    await go("/a/b");
+    await useFileManagerStore.getState().goBack("left");
+    expect(useFileManagerStore.getState().panes.left.history).toEqual(["/a", "/a/b"]);
+  });
+
+  it("discards the forward stack when going somewhere new", async () => {
+    await go("/a");
+    await go("/a/b");
+    await useFileManagerStore.getState().goBack("left");
+    await go("/c");
+    const s = useFileManagerStore.getState().panes.left;
+    expect(s.history).toEqual(["/a", "/c"]);
+    expect(useFileManagerStore.getState().canGoForward("left")).toBe(false);
+  });
+
+  it("does nothing at either end", async () => {
+    await go("/a");
+    expect(useFileManagerStore.getState().canGoBack("left")).toBe(false);
+    await useFileManagerStore.getState().goBack("left");
+    expect(at()).toBe("/a");
+    await useFileManagerStore.getState().goForward("left");
+    expect(at()).toBe("/a");
+  });
+
+  it("does not record navigating to where it already is", async () => {
+    await go("/a");
+    await go("/a");
+    expect(useFileManagerStore.getState().panes.left.history).toEqual(["/a"]);
+  });
+
+  it("records going up as a normal move", async () => {
+    await go("/a/b");
+    await useFileManagerStore.getState().goToParent("left");
+    expect(at()).toBe("/a");
+    await useFileManagerStore.getState().goBack("left");
+    expect(at()).toBe("/a/b");
+  });
+
+  it("is per pane", async () => {
+    await go("/a");
+    await go("/a/b");
+    expect(useFileManagerStore.getState().canGoBack("right")).toBe(false);
+  });
+
+  it("does not grow without bound", async () => {
+    for (let i = 0; i < 250; i++) await go(`/d${i}`);
+    const s = useFileManagerStore.getState().panes.left;
+    expect(s.history.length).toBeLessThanOrEqual(200);
+    expect(s.history[s.history.length - 1]).toBe("/d249");
+    expect(s.historyIndex).toBe(s.history.length - 1);
+  });
+});
+
+describe("bookmarks", () => {
+  beforeEach(() => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      bookmarks: [],
+      panes: { ...s.panes, left: { ...s.panes.left, path: "/Users/x/code" } },
+    });
+  });
+
+  it("names a bookmark after its folder", () => {
+    useFileManagerStore.getState().addBookmark("left");
+    expect(useFileManagerStore.getState().bookmarks).toEqual([
+      { name: "code", path: "/Users/x/code" },
+    ]);
+  });
+
+  it("does not add the same folder twice", () => {
+    const store = useFileManagerStore.getState();
+    store.addBookmark("left");
+    useFileManagerStore.getState().addBookmark("left");
+    expect(useFileManagerStore.getState().bookmarks).toHaveLength(1);
+  });
+
+  it("reports whether a folder is bookmarked", () => {
+    expect(useFileManagerStore.getState().isBookmarked("/Users/x/code")).toBe(false);
+    useFileManagerStore.getState().addBookmark("left");
+    expect(useFileManagerStore.getState().isBookmarked("/Users/x/code")).toBe(true);
+  });
+
+  it("removes by path", () => {
+    useFileManagerStore.getState().addBookmark("left");
+    useFileManagerStore.getState().removeBookmark("/Users/x/code");
+    expect(useFileManagerStore.getState().bookmarks).toEqual([]);
+  });
+
+  it("ignores a pane that has no path yet", () => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({ panes: { ...s.panes, left: { ...s.panes.left, path: "" } } });
+    useFileManagerStore.getState().addBookmark("left");
+    expect(useFileManagerStore.getState().bookmarks).toEqual([]);
+  });
+});
