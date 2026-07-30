@@ -31,6 +31,9 @@ export interface TransferReport {
   failed: FailedItem[];
 }
 
+export const markStartup = (label: string): Promise<void> =>
+  invoke<void>("mark_startup", { label });
+
 export const listDirectory = (path: string): Promise<FileEntry[]> =>
   invoke<FileEntry[]>("list_directory", { path });
 

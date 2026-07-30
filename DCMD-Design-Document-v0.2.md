@@ -281,23 +281,34 @@ Startup
 
 -   \<100 ms
 
-**Measured, and not met.** Release build on an M-series Mac, median of five
-runs, timed from `main()` with `DCMD_TRACE_STARTUP=1`:
+**Measured, and not met.** Release build on an M-series Mac, timed from
+`main()` with `DCMD_TRACE_STARTUP=1`:
 
 | Milestone | Time |
 | --- | --- |
-| Window created | ~195 ms |
-| First directory listed | ~350 ms |
+| Window created | ~160-200 ms |
+| First listing requested | ~320-350 ms |
+| Both panes ready | ~360-420 ms |
 
-Roughly 195 ms goes on Tauri and WebView initialisation before any of our code
-runs, so the target cannot be met by optimising the frontend alone — it is
-already over budget by the time the window exists. The remaining ~155 ms is
-bundle parse, React mount and the first IPC round trip.
+The shape of the problem is that **~180 ms goes on Tauri and WebView
+initialisation before any application code runs**. The target is already
+exceeded by the time the window exists, so it cannot be reached by optimising
+what happens afterwards. The remaining ~150 ms is bundle parse, React mount and
+the first IPC round trip.
 
-Worth investigating before treating the target as wrong: the frontend requests
-its first listing twice, because React StrictMode double-invokes effects in
-development, and the initial listing waits for `default_start_dir` rather than
-starting from a path known at build time.
+Options, none of them free:
+
+-   Revise the target to measure time to interactive after window creation,
+    which is the part that is actually ours to control.
+-   Render the window shell before the first listing returns, so perceived
+    startup is the ~180 ms rather than the ~380 ms.
+-   Have Rust supply the initial path with the window instead of the frontend
+    asking for it, removing one IPC round trip from the critical path.
+
+Measured and rejected as a fix: listing the two panes concurrently rather than
+in sequence. It is the correct shape and is done that way now, but on a local
+home directory the saving is around 16 ms and vanishes into run-to-run
+variance. It would matter on a slow mount.
 
 Directory open
 

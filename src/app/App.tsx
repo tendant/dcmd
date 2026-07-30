@@ -23,8 +23,11 @@ export function App() {
     const initializePanes = async () => {
       const startDir = await commands.defaultStartDir();
       const store = useFileManagerStore.getState();
-      await store.navigate("left", startDir);
-      await store.navigate("right", startDir);
+      // Both panes open on the same directory and neither depends on the other,
+      // so listing them in sequence made the second wait on the first for no
+      // reason. Startup is already over its budget before this point.
+      await Promise.all([store.navigate("left", startDir), store.navigate("right", startDir)]);
+      void commands.markStartup("panes ready");
     };
 
     initializePanes().catch((err) => {

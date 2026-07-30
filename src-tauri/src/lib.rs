@@ -23,6 +23,20 @@ pub fn trace_startup(label: &str) {
     );
 }
 
+/// As `trace_startup`, but only the first time it is reached for a given label.
+/// Commands that run repeatedly would otherwise report every later call as if it
+/// were part of startup.
+pub fn trace_startup_once(label: &str) {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    use std::sync::OnceLock;
+    static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let seen = SEEN.get_or_init(|| Mutex::new(HashSet::new()));
+    if seen.lock().unwrap().insert(label.to_string()) {
+        trace_startup(label);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     trace_startup("run() entered");
@@ -32,6 +46,7 @@ pub fn run() {
         .manage(commands::Transfers::default())
         .invoke_handler(tauri::generate_handler![
             commands::list_directory,
+            commands::mark_startup,
             commands::default_start_dir,
             commands::open_entry,
             commands::directory_size,

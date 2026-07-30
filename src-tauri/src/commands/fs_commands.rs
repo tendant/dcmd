@@ -10,9 +10,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 
+/// Lets the frontend record a startup milestone, since the interesting ones —
+/// when the panes are actually usable — are only observable from that side.
+#[tauri::command]
+pub fn mark_startup(label: String) {
+    crate::trace_startup_once(&label);
+}
+
 #[tauri::command]
 pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, FsError> {
-    crate::trace_startup("first list_directory");
+    crate::trace_startup_once("first listing requested");
     let dir = PathBuf::from(path);
     tauri::async_runtime::spawn_blocking(move || fs::read_dir_entries(&dir))
         .await
