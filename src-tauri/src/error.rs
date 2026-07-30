@@ -84,7 +84,10 @@ mod kind_contract {
         ];
         for (err, expected) in cases {
             let json = serde_json::to_string(&err).unwrap();
-            assert_eq!(json, format!("{{\"kind\":\"{expected}\",\"message\":\"p\"}}"));
+            assert_eq!(
+                json,
+                format!("{{\"kind\":\"{expected}\",\"message\":\"p\"}}")
+            );
             // Per-item failures report the kind through this accessor rather than
             // through serde, so the two must not drift apart.
             assert_eq!(err.kind_name(), expected);

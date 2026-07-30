@@ -9,12 +9,15 @@ pub fn rename_entry(path: &Path, new_name: &str) -> Result<FileEntry, FsError> {
     validate_name(new_name)?;
 
     if !path.exists() {
-        return Err(FsError::NotFound(format!("path does not exist: {}", path.display())));
+        return Err(FsError::NotFound(format!(
+            "path does not exist: {}",
+            path.display()
+        )));
     }
 
-    let parent = path.parent().ok_or_else(|| {
-        FsError::Io("cannot get parent directory".to_string())
-    })?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| FsError::Io("cannot get parent directory".to_string()))?;
 
     let new_path = parent.join(new_name);
 
@@ -23,8 +26,13 @@ pub fn rename_entry(path: &Path, new_name: &str) -> Result<FileEntry, FsError> {
     crate::fs::rename_no_replace(path, &new_path)?;
 
     let metadata = std::fs::metadata(&new_path)?;
-    crate::fs::entry::build_entry(&new_path, new_name.to_string(), &metadata, crate::fs::paths::is_hidden(new_name))
-        .map_err(|e| FsError::Io(e.to_string()))
+    crate::fs::entry::build_entry(
+        &new_path,
+        new_name.to_string(),
+        &metadata,
+        crate::fs::paths::is_hidden(new_name),
+    )
+    .map_err(|e| FsError::Io(e.to_string()))
 }
 
 #[cfg(test)]

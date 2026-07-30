@@ -21,7 +21,10 @@ pub fn move_paths_with(
         sources,
         destination_dir,
         policy,
-        &TransferControl { cancel: &never, on_progress: &noop },
+        &TransferControl {
+            cancel: &never,
+            on_progress: &noop,
+        },
     )
 }
 
@@ -250,7 +253,7 @@ mod tests {
         let src = src_dir.join("source.txt");
         fs::write(&src, "content").unwrap();
 
-        let result = move_strict(&[src.clone()], &dest_dir);
+        let result = move_strict(std::slice::from_ref(&src), &dest_dir);
         assert!(result.is_ok());
         assert!(!src.exists());
         assert!(dest_dir.join("source.txt").exists());
@@ -269,7 +272,7 @@ mod tests {
         let dest_dir = base_dir.join("dest");
         fs::create_dir(&dest_dir).unwrap();
 
-        let result = move_strict(&[src_dir.clone()], &dest_dir);
+        let result = move_strict(std::slice::from_ref(&src_dir), &dest_dir);
         assert!(result.is_ok());
         assert!(!src_dir.exists());
         assert!(dest_dir.join("source_dir/file.txt").exists());
@@ -290,11 +293,17 @@ mod tests {
         fs::write(&src, "content").unwrap();
         fs::write(dest_dir.join("source.txt"), "existing").unwrap();
 
-        let result = move_strict(&[src.clone()], &dest_dir);
-        assert!(matches!(result, Err(FsError::AlreadyExists(_))), "got {result:?}");
+        let result = move_strict(std::slice::from_ref(&src), &dest_dir);
+        assert!(
+            matches!(result, Err(FsError::AlreadyExists(_))),
+            "got {result:?}"
+        );
         // The refusal must leave both sides intact.
         assert_eq!(fs::read_to_string(&src).unwrap(), "content");
-        assert_eq!(fs::read_to_string(dest_dir.join("source.txt")).unwrap(), "existing");
+        assert_eq!(
+            fs::read_to_string(dest_dir.join("source.txt")).unwrap(),
+            "existing"
+        );
     }
 
     #[test]
@@ -303,8 +312,11 @@ mod tests {
         let src = temp_dir.path().join("source.txt");
         fs::write(&src, "content").unwrap();
 
-        let result = move_strict(&[src.clone()], temp_dir.path());
-        assert!(matches!(result, Err(FsError::InvalidName(_))), "got {result:?}");
+        let result = move_strict(std::slice::from_ref(&src), temp_dir.path());
+        assert!(
+            matches!(result, Err(FsError::InvalidName(_))),
+            "got {result:?}"
+        );
         assert_eq!(fs::read_to_string(&src).unwrap(), "content");
     }
 
@@ -335,7 +347,12 @@ mod same_dir_tests {
         let f = tmp.path().join("a.txt");
         fs::write(&f, "keep").unwrap();
 
-        let report = move_paths_with(&[f.clone()], tmp.path(), ConflictPolicy::Overwrite).unwrap();
+        let report = move_paths_with(
+            std::slice::from_ref(&f),
+            tmp.path(),
+            ConflictPolicy::Overwrite,
+        )
+        .unwrap();
 
         assert!(f.exists(), "source was destroyed");
         assert_eq!(fs::read_to_string(&f).unwrap(), "keep");
@@ -377,8 +394,14 @@ mod partial_conflict_tests {
 
         assert_eq!(report.skipped.len(), 1, "{report:?}");
         assert!(left.join("dup.txt").exists(), "skipped source was deleted");
-        assert_eq!(fs::read_to_string(left.join("dup.txt")).unwrap(), "LEFT-dup");
-        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
+        assert_eq!(
+            fs::read_to_string(left.join("dup.txt")).unwrap(),
+            "LEFT-dup"
+        );
+        assert_eq!(
+            fs::read_to_string(right.join("dup.txt")).unwrap(),
+            "RIGHT-dup"
+        );
 
         // The others did move, and are gone from the source.
         assert!(!left.join("a.txt").exists());
@@ -393,7 +416,10 @@ mod partial_conflict_tests {
 
         assert_eq!(report.failed.len(), 1, "{report:?}");
         assert!(left.join("dup.txt").exists(), "failed source was deleted");
-        assert!(!left.join("a.txt").exists(), "non-colliding item should have moved");
+        assert!(
+            !left.join("a.txt").exists(),
+            "non-colliding item should have moved"
+        );
     }
 
     #[test]
@@ -402,7 +428,10 @@ mod partial_conflict_tests {
         let report = move_paths_with(&sources, &right, ConflictPolicy::Overwrite).unwrap();
 
         assert_eq!(report.completed.len(), 3, "{report:?}");
-        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "LEFT-dup");
+        assert_eq!(
+            fs::read_to_string(right.join("dup.txt")).unwrap(),
+            "LEFT-dup"
+        );
         assert!(!left.join("dup.txt").exists());
         assert!(right.join("tree/sub/y.txt").exists());
     }
@@ -412,9 +441,18 @@ mod partial_conflict_tests {
         let (_t, left, right, sources) = fixture();
         move_paths_with(&sources, &right, ConflictPolicy::KeepBoth).unwrap();
 
-        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
-        assert_eq!(fs::read_to_string(right.join("dup copy.txt")).unwrap(), "LEFT-dup");
-        assert!(!left.join("dup.txt").exists(), "source should be gone after a move");
+        assert_eq!(
+            fs::read_to_string(right.join("dup.txt")).unwrap(),
+            "RIGHT-dup"
+        );
+        assert_eq!(
+            fs::read_to_string(right.join("dup copy.txt")).unwrap(),
+            "LEFT-dup"
+        );
+        assert!(
+            !left.join("dup.txt").exists(),
+            "source should be gone after a move"
+        );
     }
 }
 
@@ -439,11 +477,16 @@ mod merge_tests {
         fs::create_dir_all(&dst).unwrap();
         fs::write(dst.join("from-right.txt"), "R").unwrap();
 
-        let report = move_paths_with(&[src.clone()], &right, ConflictPolicy::Fail).unwrap();
+        let report =
+            move_paths_with(std::slice::from_ref(&src), &right, ConflictPolicy::Fail).unwrap();
         assert!(report.failed.is_empty(), "{report:?}");
 
         assert_eq!(read(&dst.join("from-left.txt")), "L", "moved file missing");
-        assert_eq!(read(&dst.join("from-right.txt")), "R", "destination file lost");
+        assert_eq!(
+            read(&dst.join("from-right.txt")),
+            "R",
+            "destination file lost"
+        );
         assert!(!src.exists(), "emptied source folder should be pruned");
     }
 
@@ -460,14 +503,26 @@ mod merge_tests {
         fs::create_dir_all(&dst).unwrap();
         fs::write(dst.join("clash.txt"), "R").unwrap();
 
-        let report = move_paths_with(&[src.clone()], &right, ConflictPolicy::Skip).unwrap();
+        let report =
+            move_paths_with(std::slice::from_ref(&src), &right, ConflictPolicy::Skip).unwrap();
         assert_eq!(report.skipped.len(), 1, "{report:?}");
 
-        assert_eq!(read(&dst.join("clash.txt")), "R", "skipped file was overwritten");
-        assert_eq!(read(&dst.join("unique.txt")), "U", "non-clashing file did not move");
+        assert_eq!(
+            read(&dst.join("clash.txt")),
+            "R",
+            "skipped file was overwritten"
+        );
+        assert_eq!(
+            read(&dst.join("unique.txt")),
+            "U",
+            "non-clashing file did not move"
+        );
         // The skipped file must still exist somewhere.
         assert_eq!(read(&src.join("clash.txt")), "L", "skipped source was lost");
-        assert!(src.exists(), "folder holding a skipped file should not be pruned");
+        assert!(
+            src.exists(),
+            "folder holding a skipped file should not be pruned"
+        );
     }
 
     #[test]

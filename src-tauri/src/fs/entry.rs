@@ -22,7 +22,12 @@ pub struct FileEntry {
     pub hidden: bool,
 }
 
-pub fn build_entry(path: &std::path::Path, name: String, metadata: &std::fs::Metadata, hidden: bool) -> std::io::Result<FileEntry> {
+pub fn build_entry(
+    path: &std::path::Path,
+    name: String,
+    metadata: &std::fs::Metadata,
+    hidden: bool,
+) -> std::io::Result<FileEntry> {
     let kind = if metadata.is_dir() {
         EntryKind::Directory
     } else if metadata.is_symlink() {
@@ -73,8 +78,14 @@ mod tests {
     #[test]
     fn test_entry_kind_serialization() {
         assert_eq!(serde_json::to_string(&EntryKind::File).unwrap(), "\"file\"");
-        assert_eq!(serde_json::to_string(&EntryKind::Directory).unwrap(), "\"directory\"");
-        assert_eq!(serde_json::to_string(&EntryKind::Symlink).unwrap(), "\"symlink\"");
+        assert_eq!(
+            serde_json::to_string(&EntryKind::Directory).unwrap(),
+            "\"directory\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EntryKind::Symlink).unwrap(),
+            "\"symlink\""
+        );
     }
 
     #[test]

@@ -25,7 +25,10 @@ pub fn copy_paths_with(
         sources,
         destination_dir,
         policy,
-        &TransferControl { cancel: &never, on_progress: &noop },
+        &TransferControl {
+            cancel: &never,
+            on_progress: &noop,
+        },
     )
 }
 
@@ -335,10 +338,19 @@ fn copy_strict(sources: &[PathBuf], destination_dir: &Path) -> Result<(), FsErro
     }
     let never = std::sync::atomic::AtomicBool::new(false);
     let noop = |_: usize, _: usize, _: &str| {};
-    let control = TransferControl { cancel: &never, on_progress: &noop };
+    let control = TransferControl {
+        cancel: &never,
+        on_progress: &noop,
+    };
     let mut report = TransferReport::default();
     for source in sources {
-        copy_one(source, destination_dir, ConflictPolicy::Fail, &control, &mut report)?;
+        copy_one(
+            source,
+            destination_dir,
+            ConflictPolicy::Fail,
+            &control,
+            &mut report,
+        )?;
     }
     if let Some(f) = report.failed.first() {
         return Err(FsError::Io(f.message.clone()));
@@ -362,7 +374,7 @@ mod tests {
         let src = src_dir.join("source.txt");
         fs::write(&src, "content").unwrap();
 
-        let result = copy_strict(&[src.clone()], &dest_dir);
+        let result = copy_strict(std::slice::from_ref(&src), &dest_dir);
         assert!(result.is_ok());
         assert!(src.exists());
         assert!(dest_dir.join("source.txt").exists());
@@ -383,7 +395,7 @@ mod tests {
         let dest_dir = base_dir.join("dest");
         fs::create_dir(&dest_dir).unwrap();
 
-        let result = copy_strict(&[src_dir.clone()], &dest_dir);
+        let result = copy_strict(std::slice::from_ref(&src_dir), &dest_dir);
         assert!(result.is_ok());
 
         let copied_dir = dest_dir.join("source_dir");
@@ -418,7 +430,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod containment_tests {
     use super::*;
@@ -451,7 +462,7 @@ mod containment_tests {
         let inner = foo.join("inner");
         fs::create_dir(&inner).unwrap();
 
-        let err = copy_strict(&[foo.clone()], &inner).unwrap_err();
+        let err = copy_strict(std::slice::from_ref(&foo), &inner).unwrap_err();
         assert!(matches!(err, FsError::InvalidName(_)), "got {err:?}");
 
         // The real damage was the debris left behind, so assert the source is intact.
@@ -465,7 +476,7 @@ mod containment_tests {
         let tmp = TempDir::new().unwrap();
         let foo = tmp.path().join("foo");
         fs::create_dir(&foo).unwrap();
-        let err = copy_strict(&[foo.clone()], &foo).unwrap_err();
+        let err = copy_strict(std::slice::from_ref(&foo), &foo).unwrap_err();
         assert!(matches!(err, FsError::InvalidName(_)), "got {err:?}");
     }
 
@@ -478,7 +489,7 @@ mod containment_tests {
         let dest = tmp.path().join("dest");
         fs::create_dir(&dest).unwrap();
 
-        copy_strict(&[foo.clone()], &dest).unwrap();
+        copy_strict(std::slice::from_ref(&foo), &dest).unwrap();
         assert_eq!(fs::read_to_string(dest.join("foo/f.txt")).unwrap(), "hello");
     }
 
@@ -495,7 +506,7 @@ mod containment_tests {
 
         let dest = tmp.path().join("dest");
         fs::create_dir(&dest).unwrap();
-        let _ = copy_strict(&[src.clone()], &dest);
+        let _ = copy_strict(std::slice::from_ref(&src), &dest);
 
         let (_, depth) = count_tree(&dest, 0);
         assert!(depth < 20, "symlink cycle recursed to depth {depth}");
@@ -513,7 +524,10 @@ mod cancel_tests {
         cancel: &'a AtomicBool,
         noop: &'a (dyn Fn(usize, usize, &str) + Send + Sync),
     ) -> TransferControl<'a> {
-        TransferControl { cancel, on_progress: noop }
+        TransferControl {
+            cancel,
+            on_progress: noop,
+        }
     }
 
     #[test]
@@ -530,9 +544,13 @@ mod cancel_tests {
         // Already cancelled: the walk must refuse rather than run to completion.
         let cancel = AtomicBool::new(true);
         let noop = |_: usize, _: usize, _: &str| {};
-        let report =
-            copy_paths_controlled(&[src.clone()], &dest, ConflictPolicy::Fail, &control(&cancel, &noop))
-                .unwrap();
+        let report = copy_paths_controlled(
+            std::slice::from_ref(&src),
+            &dest,
+            ConflictPolicy::Fail,
+            &control(&cancel, &noop),
+        )
+        .unwrap();
 
         assert!(report.completed.is_empty(), "nothing should have completed");
         let copied = dest.join("src");
@@ -557,9 +575,13 @@ mod cancel_tests {
         let record = |cur: usize, total: usize, name: &str| {
             seen.lock().unwrap().push((cur, total, name.to_string()));
         };
-        let report =
-            copy_paths_controlled(&srcs, &dest, ConflictPolicy::Fail, &control(&cancel, &record))
-                .unwrap();
+        let report = copy_paths_controlled(
+            &srcs,
+            &dest,
+            ConflictPolicy::Fail,
+            &control(&cancel, &record),
+        )
+        .unwrap();
 
         assert_eq!(report.completed.len(), 3);
         let seen = seen.lock().unwrap();
@@ -580,9 +602,13 @@ mod cancel_tests {
 
         let cancel = AtomicBool::new(false);
         let noop = |_: usize, _: usize, _: &str| {};
-        let report =
-            copy_paths_controlled(&[src.clone()], &dest, ConflictPolicy::Fail, &control(&cancel, &noop))
-                .unwrap();
+        let report = copy_paths_controlled(
+            std::slice::from_ref(&src),
+            &dest,
+            ConflictPolicy::Fail,
+            &control(&cancel, &noop),
+        )
+        .unwrap();
         assert_eq!(report.completed.len(), 1);
         assert_eq!(fs::read_to_string(dest.join("src/a.txt")).unwrap(), "hello");
         assert!(!cancel.load(Ordering::Relaxed));
@@ -603,8 +629,12 @@ mod same_dir_tests {
         let f = tmp.path().join("important.txt");
         fs::write(&f, "irreplaceable").unwrap();
 
-        let report =
-            copy_paths_with(&[f.clone()], tmp.path(), ConflictPolicy::Overwrite).unwrap();
+        let report = copy_paths_with(
+            std::slice::from_ref(&f),
+            tmp.path(),
+            ConflictPolicy::Overwrite,
+        )
+        .unwrap();
 
         assert!(f.exists(), "source file was destroyed");
         assert_eq!(fs::read_to_string(&f).unwrap(), "irreplaceable");
@@ -619,10 +649,17 @@ mod same_dir_tests {
         fs::create_dir(&d).unwrap();
         fs::write(d.join("code.rs"), "fn main(){}").unwrap();
 
-        let _ = copy_paths_with(&[d.clone()], tmp.path(), ConflictPolicy::Overwrite);
+        let _ = copy_paths_with(
+            std::slice::from_ref(&d),
+            tmp.path(),
+            ConflictPolicy::Overwrite,
+        );
 
         assert!(d.exists(), "source directory was destroyed");
-        assert_eq!(fs::read_to_string(d.join("code.rs")).unwrap(), "fn main(){}");
+        assert_eq!(
+            fs::read_to_string(d.join("code.rs")).unwrap(),
+            "fn main(){}"
+        );
     }
 
     #[test]
@@ -637,10 +674,13 @@ mod same_dir_tests {
             let f = tmp.path().join("a.txt");
             fs::write(&f, "keep").unwrap();
 
-            let report = copy_paths_with(&[f.clone()], tmp.path(), policy).unwrap();
+            let report = copy_paths_with(std::slice::from_ref(&f), tmp.path(), policy).unwrap();
             assert!(f.exists(), "{policy:?} destroyed the source");
             assert_eq!(fs::read_to_string(&f).unwrap(), "keep");
-            assert!(report.completed.is_empty(), "{policy:?} should not have copied");
+            assert!(
+                report.completed.is_empty(),
+                "{policy:?} should not have copied"
+            );
         }
     }
 
@@ -669,7 +709,10 @@ mod replace_safety_tests {
         c: &'a AtomicBool,
         f: &'a (dyn Fn(usize, usize, &str) + Send + Sync),
     ) -> TransferControl<'a> {
-        TransferControl { cancel: c, on_progress: f }
+        TransferControl {
+            cancel: c,
+            on_progress: f,
+        }
     }
 
     /// The core guarantee: if a replacement cannot be completed, the user keeps
@@ -696,9 +739,13 @@ mod replace_safety_tests {
         // Cancelled before it can finish, mid-replace.
         let cancel = AtomicBool::new(true);
         let noop = |_: usize, _: usize, _: &str| {};
-        let report =
-            copy_paths_controlled(&[src], &dest, ConflictPolicy::Overwrite, &ctl(&cancel, &noop))
-                .unwrap();
+        let report = copy_paths_controlled(
+            &[src],
+            &dest,
+            ConflictPolicy::Overwrite,
+            &ctl(&cancel, &noop),
+        )
+        .unwrap();
 
         assert!(existing.exists(), "the existing directory was destroyed");
         assert_eq!(
@@ -719,8 +766,7 @@ mod replace_safety_tests {
         // Source vanishes, so the copy cannot succeed.
         let missing = tmp.path().join("elsewhere").join("gone.txt");
 
-        let report =
-            copy_paths_with(&[missing], &dest, ConflictPolicy::Overwrite).unwrap();
+        let report = copy_paths_with(&[missing], &dest, ConflictPolicy::Overwrite).unwrap();
 
         assert_eq!(report.failed.len(), 1);
         assert_eq!(
@@ -752,8 +798,14 @@ mod replace_safety_tests {
         let report = copy_paths_with(&[src], &dest, ConflictPolicy::Overwrite).unwrap();
 
         assert_eq!(report.completed.len(), 1, "{:?}", report.failed);
-        assert!(existing.join("new.txt").exists(), "source file should arrive");
-        assert!(existing.join("old.txt").exists(), "destination file should survive");
+        assert!(
+            existing.join("new.txt").exists(),
+            "source file should arrive"
+        );
+        assert!(
+            existing.join("old.txt").exists(),
+            "destination file should survive"
+        );
         let debris: Vec<_> = fs::read_dir(&existing)
             .unwrap()
             .flatten()
@@ -852,12 +904,24 @@ mod partial_conflict_tests {
         assert!(report.failed.is_empty(), "{report:?}");
 
         assert_eq!(fs::read_to_string(right.join("a.txt")).unwrap(), "A");
-        assert_eq!(fs::read_to_string(right.join("tree/sub/y.txt")).unwrap(), "Y");
+        assert_eq!(
+            fs::read_to_string(right.join("tree/sub/y.txt")).unwrap(),
+            "Y"
+        );
         // The clashing file keeps the destination's version.
-        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
+        assert_eq!(
+            fs::read_to_string(right.join("dup.txt")).unwrap(),
+            "RIGHT-dup"
+        );
         // The shared folder merged: both sides' files are present.
-        assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
-        assert_eq!(fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(), "NEW");
+        assert_eq!(
+            fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(),
+            "OLD"
+        );
+        assert_eq!(
+            fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(),
+            "NEW"
+        );
     }
 
     #[test]
@@ -868,12 +932,27 @@ mod partial_conflict_tests {
 
         assert!(right.join("a.txt").exists());
         assert!(right.join("tree/sub/y.txt").exists());
-        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
-        assert_eq!(fs::read_to_string(right.join("dup copy.txt")).unwrap(), "LEFT-dup");
+        assert_eq!(
+            fs::read_to_string(right.join("dup.txt")).unwrap(),
+            "RIGHT-dup"
+        );
+        assert_eq!(
+            fs::read_to_string(right.join("dup copy.txt")).unwrap(),
+            "LEFT-dup"
+        );
         // The folder merged rather than becoming "dup_dir copy".
-        assert!(!right.join("dup_dir copy").exists(), "folder should merge, not duplicate");
-        assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
-        assert_eq!(fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(), "NEW");
+        assert!(
+            !right.join("dup_dir copy").exists(),
+            "folder should merge, not duplicate"
+        );
+        assert_eq!(
+            fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(),
+            "OLD"
+        );
+        assert_eq!(
+            fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(),
+            "NEW"
+        );
     }
 
     #[test]
@@ -883,9 +962,18 @@ mod partial_conflict_tests {
 
         assert_eq!(report.completed.len(), 4, "{report:?}");
         assert_eq!(fs::read_to_string(right.join("a.txt")).unwrap(), "A");
-        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "LEFT-dup");
-        assert_eq!(fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(), "NEW");
-        assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
+        assert_eq!(
+            fs::read_to_string(right.join("dup.txt")).unwrap(),
+            "LEFT-dup"
+        );
+        assert_eq!(
+            fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(),
+            "NEW"
+        );
+        assert_eq!(
+            fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(),
+            "OLD"
+        );
     }
 
     /// The point of merging: replacing files inside a shared folder must not take
@@ -899,9 +987,15 @@ mod partial_conflict_tests {
         copy_paths_with(&sources, &right, ConflictPolicy::Overwrite).unwrap();
 
         // The clashing file was replaced...
-        assert_eq!(fs::read_to_string(right.join("dup_dir/shared.txt")).unwrap(), "L-shared");
+        assert_eq!(
+            fs::read_to_string(right.join("dup_dir/shared.txt")).unwrap(),
+            "L-shared"
+        );
         // ...and the file only the destination had survived.
-        assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
+        assert_eq!(
+            fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(),
+            "OLD"
+        );
     }
 
     #[test]
@@ -910,11 +1004,20 @@ mod partial_conflict_tests {
         let report = copy_paths_with(&sources, &right, ConflictPolicy::Fail).unwrap();
 
         assert_eq!(report.failed.len(), 1, "{report:?}");
-        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
+        assert_eq!(
+            fs::read_to_string(right.join("dup.txt")).unwrap(),
+            "RIGHT-dup"
+        );
         assert!(right.join("tree/sub/y.txt").exists());
         // Merging still delivered the non-clashing file into the shared folder.
-        assert_eq!(fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(), "NEW");
-        assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
+        assert_eq!(
+            fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(),
+            "NEW"
+        );
+        assert_eq!(
+            fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(),
+            "OLD"
+        );
     }
 
     #[test]
@@ -931,5 +1034,3 @@ mod partial_conflict_tests {
         );
     }
 }
-
-

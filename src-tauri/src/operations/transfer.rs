@@ -118,7 +118,9 @@ pub fn check_not_same_directory(source: &Path, destination_dir: &Path) -> Result
 pub fn find_conflicts(sources: &[PathBuf], destination_dir: &Path) -> Vec<String> {
     let mut out = Vec::new();
     for source in sources {
-        let Some(name) = source.file_name() else { continue };
+        let Some(name) = source.file_name() else {
+            continue;
+        };
         let dest = destination_dir.join(name);
         collect_conflicts(source, &dest, &name.to_string_lossy(), &mut out, 0);
     }
@@ -135,10 +137,18 @@ fn collect_conflicts(src: &Path, dest: &Path, label: &str, out: &mut Vec<String>
         return;
     }
     if src.is_dir() && dest.is_dir() {
-        let Ok(entries) = std::fs::read_dir(src) else { return };
+        let Ok(entries) = std::fs::read_dir(src) else {
+            return;
+        };
         for e in entries.flatten() {
             let child_label = format!("{label}/{}", e.file_name().to_string_lossy());
-            collect_conflicts(&e.path(), &dest.join(e.file_name()), &child_label, out, depth + 1);
+            collect_conflicts(
+                &e.path(),
+                &dest.join(e.file_name()),
+                &child_label,
+                out,
+                depth + 1,
+            );
         }
         return;
     }
@@ -152,7 +162,10 @@ pub fn unique_destination(dest: &Path) -> Result<PathBuf, FsError> {
         return Ok(dest.to_path_buf());
     }
     let parent = dest.parent().unwrap_or(Path::new("."));
-    let stem = dest.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let stem = dest
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
     let ext = dest.extension().map(|e| e.to_string_lossy().to_string());
 
     for n in 1..1000 {
@@ -323,7 +336,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let f = tmp.path().join("notes.txt");
         fs::write(&f, "x").unwrap();
-        assert_eq!(unique_destination(&f).unwrap(), tmp.path().join("notes copy.txt"));
+        assert_eq!(
+            unique_destination(&f).unwrap(),
+            tmp.path().join("notes copy.txt")
+        );
     }
 
     #[test]
@@ -332,7 +348,10 @@ mod tests {
         let f = tmp.path().join("notes.txt");
         fs::write(&f, "x").unwrap();
         fs::write(tmp.path().join("notes copy.txt"), "x").unwrap();
-        assert_eq!(unique_destination(&f).unwrap(), tmp.path().join("notes copy 2.txt"));
+        assert_eq!(
+            unique_destination(&f).unwrap(),
+            tmp.path().join("notes copy 2.txt")
+        );
     }
 
     #[test]
@@ -340,7 +359,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let f = tmp.path().join("a.txt");
         fs::write(&f, "x").unwrap();
-        assert_eq!(resolve_destination(&f, ConflictPolicy::Skip).unwrap(), Resolution::Skip);
+        assert_eq!(
+            resolve_destination(&f, ConflictPolicy::Skip).unwrap(),
+            Resolution::Skip
+        );
     }
 
     // The whole point of the redesign: resolving must not touch anything on disk.

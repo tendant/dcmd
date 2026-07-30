@@ -89,6 +89,62 @@ No networking. No plugins. No settings.
 -   History
 -   Path bar
 
+## Pane sizing
+
+**TODO — not yet implemented.** The split is a fixed 50/50 (`flex-1` on each
+pane in `DualPaneLayout`), so neither pane can be widened.
+
+-   Draggable divider between the panes
+-   Double-click the divider to reset to an even split
+-   Keyboard adjustment, so it is reachable without the mouse
+-   Collapse one pane entirely, and restore it
+-   Remember the ratio across restarts
+
+Notes for whoever picks this up:
+
+-   Store the split as a **ratio**, not a pixel width, or resizing the window
+    will push one pane off-screen.
+-   Clamp to a sensible minimum so a pane cannot be dragged to zero by
+    accident; collapsing should be a deliberate action with its own way back.
+-   The file list is virtualised against a measured container. The virtualiser
+    must be told the height changed, or rows will be positioned against a stale
+    measurement after a resize.
+-   Persistence needs somewhere to live: there is no settings store yet, and
+    this is likely the first thing to want one.
+
+## Sorting
+
+**TODO — not yet implemented.** Listings are currently fixed at
+directories-first, then case-insensitive by name.
+
+-   Sort by name
+-   Sort by size
+-   Sort by modified time
+-   Sort by created time
+-   Sort by extension / kind
+-   Ascending and descending, toggled by re-selecting the active key
+-   Directories grouped before files, independent of the sort key
+-   Per pane, since the two are often used for different purposes
+-   Clickable column headers, with the active key and direction shown
+-   Keyboard shortcuts for each key, so it stays usable without the mouse
+
+Notes for whoever picks this up:
+
+-   `FileEntry` carries `modifiedAt` but **not** a creation time. Sorting by
+    created time needs a new field from `build_entry`.
+-   `std::fs::Metadata::created()` is not available everywhere: it works on
+    macOS and Windows, but returns an error on Linux filesystems that do not
+    record a birth time. The field has to be optional, and the UI needs to
+    behave sensibly when it is missing rather than sorting those entries
+    arbitrarily.
+-   Sorting happens in Rust today (`read_dir_entries`). Doing it in the
+    frontend instead would let the key change without re-listing, but means
+    shipping the comparison logic to the client; either is defensible, but the
+    choice should be made deliberately rather than by accident.
+-   Whatever is chosen must resolve rows through `visibleEntries()`, or a sort
+    applied while a filter is active will desynchronise the cursor from what is
+    on screen.
+
 ## Operations
 
 -   Copy
@@ -302,6 +358,8 @@ Business logic lives in Rust.
 -   History
 -   Search
 -   Command Palette
+-   Sorting (see the Sorting section above)
+-   Pane sizing (see the Pane sizing section above)
 
 ## Milestone 4
 

@@ -4,11 +4,11 @@ use crate::operations;
 use crate::operations::transfer::{
     ConflictPolicy, TransferControl, TransferProgress, TransferReport,
 };
-use tauri::Emitter;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tauri::Emitter;
 
 #[tauri::command]
 pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, FsError> {
@@ -87,7 +87,11 @@ where
         + 'static,
 {
     let cancel = Arc::new(AtomicBool::new(false));
-    state.0.lock().unwrap().insert(id.clone(), Arc::clone(&cancel));
+    state
+        .0
+        .lock()
+        .unwrap()
+        .insert(id.clone(), Arc::clone(&cancel));
 
     let srcs: Vec<PathBuf> = sources.into_iter().map(PathBuf::from).collect();
     let dest = PathBuf::from(destination_dir);
@@ -109,7 +113,10 @@ where
             &srcs,
             &dest,
             policy,
-            &TransferControl { cancel: &cancel, on_progress: &on_progress },
+            &TransferControl {
+                cancel: &cancel,
+                on_progress: &on_progress,
+            },
         )
     })
     .await
@@ -267,8 +274,6 @@ pub async fn rename(path: String, new_name: String) -> Result<FileEntry, FsError
         .await
         .map_err(|e| FsError::Io(format!("task join error: {e}")))?
 }
-
-
 
 #[tauri::command]
 pub async fn trash_entries(paths: Vec<String>) -> Result<(), FsError> {

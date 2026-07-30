@@ -49,11 +49,17 @@ pub fn calculate_dir_size_cancellable(
 
 pub fn read_dir_entries(dir_path: &Path) -> Result<Vec<FileEntry>, FsError> {
     if !dir_path.exists() {
-        return Err(FsError::NotFound(format!("path does not exist: {}", dir_path.display())));
+        return Err(FsError::NotFound(format!(
+            "path does not exist: {}",
+            dir_path.display()
+        )));
     }
 
     if !dir_path.is_dir() {
-        return Err(FsError::NotADirectory(format!("path is not a directory: {}", dir_path.display())));
+        return Err(FsError::NotADirectory(format!(
+            "path is not a directory: {}",
+            dir_path.display()
+        )));
     }
 
     let mut entries = Vec::new();
@@ -72,7 +78,10 @@ pub fn read_dir_entries(dir_path: &Path) -> Result<Vec<FileEntry>, FsError> {
 
     // Sort: directories first, then case-insensitive alphabetical
     entries.sort_by(|a, b| {
-        match (a.kind == crate::fs::entry::EntryKind::Directory, b.kind == crate::fs::entry::EntryKind::Directory) {
+        match (
+            a.kind == crate::fs::entry::EntryKind::Directory,
+            b.kind == crate::fs::entry::EntryKind::Directory,
+        ) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
             _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
