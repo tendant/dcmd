@@ -15,6 +15,17 @@ interface FileListProps {
   filter: string;
 }
 
+// Blank row that hosts the inline input while creating a folder.
+const NEW_FOLDER_PLACEHOLDER: FileEntry = {
+  name: "",
+  path: "",
+  kind: "directory",
+  size: null,
+  itemCount: null,
+  modifiedAt: null,
+  hidden: false,
+};
+
 // Synthetic parent directory entry
 const PARENT_ENTRY: FileEntry = {
   name: "..",
@@ -26,6 +37,25 @@ const PARENT_ENTRY: FileEntry = {
   hidden: false,
 };
 
+/**
+ * Composes the rows a pane displays: the ".." row, the entries, and while
+ * creating a folder a trailing blank placeholder to host the input.
+ *
+ * Two things this must get right, both of which were previously wrong:
+ * the ".." row exists even when the directory is empty, so there is always a way
+ * back out; and the new-folder input is an *extra* trailing row rather than the
+ * last existing entry, which would hide that entry and prefill its name.
+ */
+export function buildDisplayRows(
+  entries: FileEntry[],
+  isCreating: boolean,
+): { rows: FileEntry[]; newFolderIndex: number } {
+  const rows = [PARENT_ENTRY, ...entries];
+  if (!isCreating) return { rows, newFolderIndex: -1 };
+  rows.push(NEW_FOLDER_PLACEHOLDER);
+  return { rows, newFolderIndex: rows.length - 1 };
+}
+
 export function FileList({
   entries,
   selected,
@@ -36,8 +66,8 @@ export function FileList({
 }: FileListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
-  // Prepend parent directory entry
-  const displayEntries = [PARENT_ENTRY, ...entries];
+  const isCreating = renameMode?.type === "creating";
+  const { rows: displayEntries, newFolderIndex } = buildDisplayRows(entries, !!isCreating);
 
   const virtualizer = useVirtualizer({
     count: displayEntries.length,
@@ -54,14 +84,6 @@ export function FileList({
   const virtualItems = virtualizer.getVirtualItems();
   const totalSize = virtualizer.getTotalSize();
 
-  if (entries.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">
-        {filter ? `No matches for "${filter}"` : "No files"}
-      </div>
-    );
-  }
-
   return (
     <div
       ref={parentRef}
@@ -72,11 +94,13 @@ export function FileList({
         {virtualItems.map((virtualItem) => {
           const entry = displayEntries[virtualItem.index];
           const isParent = virtualItem.index === 0;
+          const isNewFolderRow = virtualItem.index === newFolderIndex;
           const isRenaming =
-            renameMode &&
-            !isParent &&
-            ((renameMode.type === "rename" && renameMode.path === entry.path) ||
-              (renameMode.type === "creating" && virtualItem.index === displayEntries.length - 1));
+            isNewFolderRow ||
+            (!!renameMode &&
+              !isParent &&
+              renameMode.type === "rename" &&
+              renameMode.path === entry.path);
 
           return (
             <div
@@ -96,6 +120,7 @@ export function FileList({
                 isSelected={!isParent && selected.has(entry.path)}
                 isCursor={virtualItem.index === cursor}
                 isRenaming={isRenaming}
+                isCreating={isNewFolderRow}
                 index={virtualItem.index}
                 isParentDirectory={isParent}
               />
@@ -103,6 +128,14 @@ export function FileList({
           );
         })}
       </div>
+
+      {/* Shown below the ".." row rather than replacing the list: an empty
+          directory still needs a way back out. */}
+      {entries.length === 0 && !isCreating && (
+        <div className="px-2 py-3 text-center text-sm text-gray-500 dark:text-gray-400">
+          {filter ? `No matches for "${filter}"` : "No files"}
+        </div>
+      )}
     </div>
   );
 }

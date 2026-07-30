@@ -31,6 +31,12 @@ pub fn move_paths(sources: &[PathBuf], destination_dir: &Path) -> Result<(), FsE
             )));
         }
 
+        // Same hazard as copy: the fallback path copies before deleting, and a
+        // rename into your own subdirectory is meaningless regardless.
+        if source.is_dir() {
+            crate::operations::copy::check_not_into_itself(source, destination_dir)?;
+        }
+
         // Try a direct rename first (same filesystem)
         match fs::rename(source, &dest) {
             Ok(_) => continue,

@@ -8,6 +8,8 @@ interface FileRowProps {
   isSelected: boolean;
   isCursor: boolean;
   isRenaming: boolean;
+  /** True for the placeholder row hosting the new-folder input. */
+  isCreating?: boolean;
   index: number;
   isParentDirectory?: boolean;
 }
@@ -18,6 +20,7 @@ export function FileRow({
   isSelected,
   isCursor,
   isRenaming,
+  isCreating = false,
   index,
   isParentDirectory = false,
 }: FileRowProps) {
@@ -26,6 +29,7 @@ export function FileRow({
   const setCursor = useFileManagerStore((s) => s.setCursor);
   const paneState = useFileManagerStore((s) => s.panes[paneId]);
   const commitRename = useFileManagerStore((s) => s.commitRename);
+  const commitMkdir = useFileManagerStore((s) => s.commitMkdir);
   const navigate = useFileManagerStore((s) => s.navigate);
   const goToParent = useFileManagerStore((s) => s.goToParent);
   const openEntry = useFileManagerStore((s) => s.openEntry);
@@ -37,10 +41,15 @@ export function FileRow({
           isCursor ? "border-l-blue-500 bg-blue-50 dark:bg-blue-900" : "border-l-transparent"
         }`}
       >
+        <span className="mr-2">📁</span>
         <RenameInput
           paneId={paneId}
-          initialValue={entry.name}
-          onCommit={(newName) => commitRename(paneId, entry.path, newName)}
+          initialValue={isCreating ? "" : entry.name}
+          onCommit={(name) =>
+            isCreating
+              ? commitMkdir(paneId, name)
+              : commitRename(paneId, entry.path, name)
+          }
         />
       </div>
     );
