@@ -1,7 +1,10 @@
 use crate::error::FsError;
 use crate::fs::{self, FileEntry};
 use crate::operations;
-use crate::operations::transfer::{ConflictPolicy, TransferReport};
+use crate::operations::transfer::{
+    ConflictPolicy, TransferControl, TransferProgress, TransferReport,
+};
+use tauri::Emitter;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -58,34 +61,116 @@ pub async fn check_conflicts(
     .map_err(|e| FsError::Io(format!("task join error: {e}")))?
 }
 
+/// Cancellation flags for in-flight transfers, keyed by the caller's request id.
+#[derive(Default)]
+pub struct Transfers(Mutex<HashMap<String, Arc<AtomicBool>>>);
+
+/// Runs a transfer, emitting `transfer://progress` as it advances and stopping
+/// early if `cancel_transfer` is called with the same id.
+async fn run_transfer<F>(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Transfers>,
+    id: String,
+    sources: Vec<String>,
+    destination_dir: String,
+    policy: ConflictPolicy,
+    run: F,
+) -> Result<TransferReport, FsError>
+where
+    F: FnOnce(
+            &[PathBuf],
+            &PathBuf,
+            ConflictPolicy,
+            &TransferControl<'_>,
+        ) -> Result<TransferReport, FsError>
+        + Send
+        + 'static,
+{
+    let cancel = Arc::new(AtomicBool::new(false));
+    state.0.lock().unwrap().insert(id.clone(), Arc::clone(&cancel));
+
+    let srcs: Vec<PathBuf> = sources.into_iter().map(PathBuf::from).collect();
+    let dest = PathBuf::from(destination_dir);
+    let progress_id = id.clone();
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let on_progress = move |current: usize, total: usize, name: &str| {
+            let _ = app.emit(
+                "transfer://progress",
+                TransferProgress {
+                    id: progress_id.clone(),
+                    current,
+                    total,
+                    name: name.to_string(),
+                },
+            );
+        };
+        run(
+            &srcs,
+            &dest,
+            policy,
+            &TransferControl { cancel: &cancel, on_progress: &on_progress },
+        )
+    })
+    .await
+    .map_err(|e| FsError::Io(format!("task join error: {e}")))?;
+
+    state.0.lock().unwrap().remove(&id);
+    result
+}
+
 #[tauri::command]
 pub async fn copy_entries_with(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Transfers>,
+    id: String,
     sources: Vec<String>,
     destination_dir: String,
     policy: ConflictPolicy,
 ) -> Result<TransferReport, FsError> {
-    let srcs: Vec<PathBuf> = sources.into_iter().map(PathBuf::from).collect();
-    let dest = PathBuf::from(destination_dir);
-    tauri::async_runtime::spawn_blocking(move || {
-        operations::copy::copy_paths_with(&srcs, &dest, policy)
-    })
+    run_transfer(
+        app,
+        state,
+        id,
+        sources,
+        destination_dir,
+        policy,
+        |s, d, p, c| operations::copy::copy_paths_controlled(s, d, p, c),
+    )
     .await
-    .map_err(|e| FsError::Io(format!("task join error: {e}")))?
 }
 
 #[tauri::command]
 pub async fn move_entries_with(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Transfers>,
+    id: String,
     sources: Vec<String>,
     destination_dir: String,
     policy: ConflictPolicy,
 ) -> Result<TransferReport, FsError> {
-    let srcs: Vec<PathBuf> = sources.into_iter().map(PathBuf::from).collect();
-    let dest = PathBuf::from(destination_dir);
-    tauri::async_runtime::spawn_blocking(move || {
-        operations::move_op::move_paths_with(&srcs, &dest, policy)
-    })
+    run_transfer(
+        app,
+        state,
+        id,
+        sources,
+        destination_dir,
+        policy,
+        |s, d, p, c| operations::move_op::move_paths_controlled(s, d, p, c),
+    )
     .await
-    .map_err(|e| FsError::Io(format!("task join error: {e}")))?
+}
+
+/// Signals an in-flight transfer to stop. No-op if it already finished.
+#[tauri::command]
+pub async fn cancel_transfer(
+    id: String,
+    state: tauri::State<'_, Transfers>,
+) -> Result<(), FsError> {
+    if let Some(flag) = state.0.lock().unwrap().get(&id) {
+        flag.store(true, Ordering::Relaxed);
+    }
+    Ok(())
 }
 
 /// Opens a path with the OS default application.

@@ -1,6 +1,7 @@
 import { Pane } from "./Pane";
 import { Toolbar } from "./Toolbar";
 import { Dialog } from "./Dialog";
+import { TransferProgressBar } from "./TransferProgressBar";
 
 export function DualPaneLayout() {
   return (
@@ -13,6 +14,7 @@ export function DualPaneLayout() {
           <Pane paneId="right" />
         </div>
       </div>
+      <TransferProgressBar />
       <Toolbar />
       <Dialog />
     </div>

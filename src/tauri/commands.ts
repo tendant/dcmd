@@ -60,16 +60,28 @@ export interface TransferReport {
 export const checkConflicts = (sources: string[], destinationDir: string): Promise<string[]> =>
   invoke<string[]>("check_conflicts", { sources, destinationDir });
 
+export interface TransferProgress {
+  id: string;
+  current: number;
+  total: number;
+  name: string;
+}
+
 export const copyEntriesWith = (
+  id: string,
   sources: string[],
   destinationDir: string,
   policy: ConflictPolicy,
 ): Promise<TransferReport> =>
-  invoke<TransferReport>("copy_entries_with", { sources, destinationDir, policy });
+  invoke<TransferReport>("copy_entries_with", { id, sources, destinationDir, policy });
 
 export const moveEntriesWith = (
+  id: string,
   sources: string[],
   destinationDir: string,
   policy: ConflictPolicy,
 ): Promise<TransferReport> =>
-  invoke<TransferReport>("move_entries_with", { sources, destinationDir, policy });
+  invoke<TransferReport>("move_entries_with", { id, sources, destinationDir, policy });
+
+export const cancelTransfer = (id: string): Promise<void> =>
+  invoke<void>("cancel_transfer", { id });

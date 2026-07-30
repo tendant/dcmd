@@ -146,9 +146,11 @@ export function useGlobalKeyboard() {
         case "Escape": {
           e.preventDefault();
           const pane = store.activePane;
-          // Escape clears an active filter first; only once there is nothing to
-          // clear does it fall through to aborting directory size walks.
-          if (store.panes[pane].filter) {
+          // Escape unwinds one thing at a time, most transient first: a running
+          // transfer, then a filter, then background size walks.
+          if (store.transfer) {
+            store.cancelTransfer();
+          } else if (store.panes[pane].filter) {
             store.clearFilter(pane);
           } else {
             store.cancelAllDirSizes(pane);

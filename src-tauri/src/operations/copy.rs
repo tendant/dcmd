@@ -1,5 +1,7 @@
 use crate::error::FsError;
-use crate::operations::transfer::{resolve_destination, ConflictPolicy, FailedItem, TransferReport};
+use crate::operations::transfer::{
+    resolve_destination, ConflictPolicy, FailedItem, TransferControl, TransferReport,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -13,7 +15,14 @@ pub fn copy_paths(sources: &[PathBuf], destination_dir: &Path) -> Result<(), FsE
         )));
     }
     for source in sources {
-        copy_one(source, destination_dir, ConflictPolicy::Fail)?;
+        let never = std::sync::atomic::AtomicBool::new(false);
+        let noop = |_: usize, _: usize, _: &str| {};
+        copy_one(
+            source,
+            destination_dir,
+            ConflictPolicy::Fail,
+            &TransferControl { cancel: &never, on_progress: &noop },
+        )?;
     }
     Ok(())
 }
@@ -28,6 +37,23 @@ pub fn copy_paths_with(
     destination_dir: &Path,
     policy: ConflictPolicy,
 ) -> Result<TransferReport, FsError> {
+    let never = std::sync::atomic::AtomicBool::new(false);
+    let noop = |_: usize, _: usize, _: &str| {};
+    copy_paths_controlled(
+        sources,
+        destination_dir,
+        policy,
+        &TransferControl { cancel: &never, on_progress: &noop },
+    )
+}
+
+/// As `copy_paths_with`, but cancellable and reporting progress per item.
+pub fn copy_paths_controlled(
+    sources: &[PathBuf],
+    destination_dir: &Path,
+    policy: ConflictPolicy,
+    control: &TransferControl<'_>,
+) -> Result<TransferReport, FsError> {
     if !destination_dir.is_dir() {
         return Err(FsError::NotADirectory(format!(
             "destination is not a directory: {}",
@@ -37,8 +63,19 @@ pub fn copy_paths_with(
 
     let mut report = TransferReport::default();
 
-    for source in sources {
-        match copy_one(source, destination_dir, policy) {
+    for (i, source) in sources.iter().enumerate() {
+        // Stop between items as well as inside a large one, so cancelling a
+        // multi-file transfer does not have to wait for the current file.
+        if control.is_cancelled() {
+            break;
+        }
+        let name = source
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        (control.on_progress)(i, sources.len(), &name);
+
+        match copy_one(source, destination_dir, policy, control) {
             Ok(Some(())) => report.completed.push(source.display().to_string()),
             Ok(None) => report.skipped.push(source.display().to_string()),
             Err(e) => report.failed.push(FailedItem {
@@ -56,6 +93,7 @@ fn copy_one(
     source: &Path,
     destination_dir: &Path,
     policy: ConflictPolicy,
+    control: &TransferControl<'_>,
 ) -> Result<Option<()>, FsError> {
     if !source.exists() {
         return Err(FsError::NotFound(format!(
@@ -75,7 +113,7 @@ fn copy_one(
 
     if source.is_dir() {
         check_not_into_itself(source, destination_dir)?;
-        copy_dir_recursive(source, &dest, &mut Vec::new())?;
+        copy_dir_recursive(source, &dest, &mut Vec::new(), control)?;
     } else {
         fs::copy(source, &dest)?;
     }
@@ -95,7 +133,13 @@ pub fn check_not_into_itself(source: &Path, destination_dir: &Path) -> Result<()
     Ok(())
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path, seen: &mut Vec<PathBuf>) -> Result<(), FsError> {
+fn copy_dir_recursive(
+    src: &Path,
+    dst: &Path,
+    seen: &mut Vec<PathBuf>,
+    control: &TransferControl<'_>,
+) -> Result<(), FsError> {
+    control.check()?;
     // Symlinked directories are dereferenced, so a link pointing at an ancestor
     // would recurse forever. Track the real directories already entered.
     let real = crate::fs::paths::resolve(src);
@@ -107,13 +151,14 @@ fn copy_dir_recursive(src: &Path, dst: &Path, seen: &mut Vec<PathBuf>) -> Result
     fs::create_dir(dst)?;
 
     for entry in fs::read_dir(src)? {
+        control.check()?;
         let entry = entry?;
         let path = entry.path();
         let file_name = entry.file_name();
         let dest = dst.join(&file_name);
 
         if path.is_dir() {
-            copy_dir_recursive(&path, &dest, seen)?;
+            copy_dir_recursive(&path, &dest, seen, control)?;
         } else {
             fs::copy(&path, &dest)?;
         }
@@ -276,5 +321,92 @@ mod containment_tests {
 
         let (_, depth) = count_tree(&dest, 0);
         assert!(depth < 20, "symlink cycle recursed to depth {depth}");
+    }
+}
+
+#[cfg(test)]
+mod cancel_tests {
+    use super::*;
+    use crate::operations::transfer::TransferControl;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tempfile::TempDir;
+
+    fn control<'a>(
+        cancel: &'a AtomicBool,
+        noop: &'a (dyn Fn(usize, usize, &str) + Send + Sync),
+    ) -> TransferControl<'a> {
+        TransferControl { cancel, on_progress: noop }
+    }
+
+    #[test]
+    fn a_cancelled_transfer_stops_and_does_not_copy_everything() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        fs::create_dir(&src).unwrap();
+        for i in 0..300 {
+            fs::write(src.join(format!("f{i}.txt")), "x").unwrap();
+        }
+        let dest = tmp.path().join("dest");
+        fs::create_dir(&dest).unwrap();
+
+        // Already cancelled: the walk must refuse rather than run to completion.
+        let cancel = AtomicBool::new(true);
+        let noop = |_: usize, _: usize, _: &str| {};
+        let report =
+            copy_paths_controlled(&[src.clone()], &dest, ConflictPolicy::Fail, &control(&cancel, &noop))
+                .unwrap();
+
+        assert!(report.completed.is_empty(), "nothing should have completed");
+        let copied = dest.join("src");
+        let n = fs::read_dir(&copied).map(|r| r.count()).unwrap_or(0);
+        assert!(n < 300, "copied {n} of 300 despite cancellation");
+    }
+
+    #[test]
+    fn progress_is_reported_per_item() {
+        let tmp = TempDir::new().unwrap();
+        let dest = tmp.path().join("dest");
+        fs::create_dir(&dest).unwrap();
+        let mut srcs = Vec::new();
+        for i in 0..3 {
+            let f = tmp.path().join(format!("s{i}.txt"));
+            fs::write(&f, "x").unwrap();
+            srcs.push(f);
+        }
+
+        let seen = std::sync::Mutex::new(Vec::new());
+        let cancel = AtomicBool::new(false);
+        let record = |cur: usize, total: usize, name: &str| {
+            seen.lock().unwrap().push((cur, total, name.to_string()));
+        };
+        let report =
+            copy_paths_controlled(&srcs, &dest, ConflictPolicy::Fail, &control(&cancel, &record))
+                .unwrap();
+
+        assert_eq!(report.completed.len(), 3);
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 3);
+        assert_eq!(seen[0].0, 0);
+        assert_eq!(seen[0].1, 3);
+        assert_eq!(seen[2].2, "s2.txt");
+    }
+
+    #[test]
+    fn an_uncancelled_transfer_still_completes() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        fs::create_dir(&src).unwrap();
+        fs::write(src.join("a.txt"), "hello").unwrap();
+        let dest = tmp.path().join("dest");
+        fs::create_dir(&dest).unwrap();
+
+        let cancel = AtomicBool::new(false);
+        let noop = |_: usize, _: usize, _: &str| {};
+        let report =
+            copy_paths_controlled(&[src.clone()], &dest, ConflictPolicy::Fail, &control(&cancel, &noop))
+                .unwrap();
+        assert_eq!(report.completed.len(), 1);
+        assert_eq!(fs::read_to_string(dest.join("src/a.txt")).unwrap(), "hello");
+        assert!(!cancel.load(Ordering::Relaxed));
     }
 }

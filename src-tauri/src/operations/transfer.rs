@@ -43,6 +43,40 @@ impl TransferReport {
     }
 }
 
+/// Progress for a running transfer, emitted to the frontend as it advances.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferProgress {
+    /// Correlates events with the request that started them.
+    pub id: String,
+    pub current: usize,
+    pub total: usize,
+    /// Name of the item being worked on, for display.
+    pub name: String,
+}
+
+/// Cooperative cancellation plus a place to report progress.
+///
+/// Passed down through the recursive walk so a long copy can be abandoned partway
+/// instead of running to completion with the UI unable to intervene.
+pub struct TransferControl<'a> {
+    pub cancel: &'a std::sync::atomic::AtomicBool,
+    pub on_progress: &'a (dyn Fn(usize, usize, &str) + Send + Sync),
+}
+
+impl TransferControl<'_> {
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn check(&self) -> Result<(), FsError> {
+        if self.is_cancelled() {
+            return Err(FsError::Cancelled("transfer cancelled".into()));
+        }
+        Ok(())
+    }
+}
+
 /// Names that already exist at the destination, so the user can be asked before
 /// anything is written.
 pub fn find_conflicts(sources: &[PathBuf], destination_dir: &Path) -> Vec<String> {

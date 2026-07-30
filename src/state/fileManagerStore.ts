@@ -51,10 +51,21 @@ export type DialogState =
       paths: string[];
     };
 
+/** A transfer currently running, so it can be shown and cancelled. */
+export interface ActiveTransfer {
+  id: string;
+  op: "copy" | "move";
+  pane: PaneId;
+  current: number;
+  total: number;
+  name: string;
+}
+
 export interface FileManagerState {
   panes: Record<PaneId, PaneState>;
   activePane: PaneId;
   dialog: DialogState | null;
+  transfer: ActiveTransfer | null;
 
   setActivePane: (pane: PaneId) => void;
   navigate: (pane: PaneId, path: string) => Promise<void>;
@@ -99,7 +110,12 @@ export interface FileManagerState {
   /** Opens the delete confirmation, which names what it will remove. */
   requestTrash: (pane: PaneId) => void;
   dismissDialog: () => void;
+  setTransferProgress: (p: commands.TransferProgress) => void;
+  cancelTransfer: () => void;
 }
+
+/** Monotonic id source; Date.now() would collide on fast successive transfers. */
+let transferSeq = 1;
 
 /** Pulls a readable message out of whatever the Tauri layer threw. */
 const errorMessage = (err: unknown): string =>
@@ -325,6 +341,23 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   },
 
   dialog: null,
+  transfer: null,
+
+  setTransferProgress: (p) =>
+    set((state) =>
+      // Ignore events from a transfer that already finished or was replaced.
+      state.transfer && state.transfer.id === p.id
+        ? { transfer: { ...state.transfer, current: p.current, total: p.total, name: p.name } }
+        : {},
+    ),
+
+  cancelTransfer: () => {
+    const t = get().transfer;
+    if (!t) return;
+    commands.cancelTransfer(t.id).catch((err) => {
+      console.error("Failed to cancel transfer:", err);
+    });
+  },
 
   dismissDialog: () => set({ dialog: null }),
 
@@ -356,13 +389,18 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
 
   performTransfer: async (op, pane, sources, destination, policy) => {
     const state = get();
-    set({ dialog: null });
+    // The id lets progress events and a cancel request find this transfer.
+    const id = `${op}-${transferSeq++}`;
+    set({
+      dialog: null,
+      transfer: { id, op, pane, current: 0, total: sources.length, name: "" },
+    });
 
     try {
       const report =
         op === "copy"
-          ? await commands.copyEntriesWith(sources, destination, policy)
-          : await commands.moveEntriesWith(sources, destination, policy);
+          ? await commands.copyEntriesWith(id, sources, destination, policy)
+          : await commands.moveEntriesWith(id, sources, destination, policy);
 
       const other: PaneId = pane === "left" ? "right" : "left";
       await state.refresh(pane);
@@ -382,6 +420,9 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       state.setPaneError(pane, parts.length > 0 ? `${op}: ${parts.join(", ")}` : null);
     } catch (err) {
       state.setPaneError(pane, errorMessage(err));
+    } finally {
+      // Clear only if this is still the transfer on screen.
+      set((s2) => (s2.transfer?.id === id ? { transfer: null } : {}));
     }
   },
 

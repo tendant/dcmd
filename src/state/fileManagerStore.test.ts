@@ -14,6 +14,7 @@ vi.mock("../tauri/commands", () => ({
   checkConflicts: vi.fn(async () => []),
   copyEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
   moveEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
+  cancelTransfer: vi.fn(async () => undefined),
 }));
 
 import * as commands from "../tauri/commands";
@@ -60,7 +61,7 @@ function seedPane(cursor: number, selected: string[] = []) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useFileManagerStore.setState({ dialog: null });
+  useFileManagerStore.setState({ dialog: null, transfer: null });
 });
 
 describe("operations with no explicit selection", () => {
@@ -236,7 +237,12 @@ describe("conflict handling", () => {
     await useFileManagerStore.getState().requestTransfer("copy");
 
     expect(useFileManagerStore.getState().dialog).toBeNull();
-    expect(commands.copyEntriesWith).toHaveBeenCalledWith(["/left/a.txt"], "/right", "fail");
+    expect(commands.copyEntriesWith).toHaveBeenCalledWith(
+      expect.any(String),
+      ["/left/a.txt"],
+      "/right",
+      "fail",
+    );
   });
 
   it("passes the chosen policy through and closes the dialog", async () => {
@@ -245,7 +251,12 @@ describe("conflict handling", () => {
       .getState()
       .performTransfer("move", "left", ["/left/a.txt"], "/right", "keepBoth");
 
-    expect(commands.moveEntriesWith).toHaveBeenCalledWith(["/left/a.txt"], "/right", "keepBoth");
+    expect(commands.moveEntriesWith).toHaveBeenCalledWith(
+      expect.any(String),
+      ["/left/a.txt"],
+      "/right",
+      "keepBoth",
+    );
     expect(useFileManagerStore.getState().dialog).toBeNull();
   });
 
@@ -295,5 +306,55 @@ describe("delete confirmation", () => {
     useFileManagerStore.getState().requestTrash("left");
     expect(useFileManagerStore.getState().dialog).toBeNull();
     expect(useFileManagerStore.getState().panes.left.error).toBe("Nothing to delete");
+  });
+});
+
+describe("transfer progress", () => {
+  it("registers a running transfer so it can be shown and cancelled", async () => {
+    seedPane(1);
+    let observed: any = null;
+    (commands.copyEntriesWith as any).mockImplementationOnce(async () => {
+      observed = useFileManagerStore.getState().transfer;
+      return { completed: [], skipped: [], failed: [] };
+    });
+    await useFileManagerStore
+      .getState()
+      .performTransfer("copy", "left", ["/left/a.txt"], "/right", "fail");
+
+    expect(observed).toMatchObject({ op: "copy", pane: "left", total: 1 });
+    // Cleared once finished, so no stale bar is left on screen.
+    expect(useFileManagerStore.getState().transfer).toBeNull();
+  });
+
+  it("clears the transfer even when it fails", async () => {
+    seedPane(1);
+    (commands.copyEntriesWith as any).mockRejectedValueOnce({ message: "nope" });
+    await useFileManagerStore
+      .getState()
+      .performTransfer("copy", "left", ["/left/a.txt"], "/right", "fail");
+    expect(useFileManagerStore.getState().transfer).toBeNull();
+    expect(useFileManagerStore.getState().panes.left.error).toBe("nope");
+  });
+
+  it("applies progress events only to the matching transfer", () => {
+    useFileManagerStore.setState({
+      transfer: { id: "copy-1", op: "copy", pane: "left", current: 0, total: 10, name: "" },
+    });
+    const store = useFileManagerStore.getState();
+
+    store.setTransferProgress({ id: "copy-1", current: 4, total: 10, name: "d.txt" });
+    expect(useFileManagerStore.getState().transfer).toMatchObject({ current: 4, name: "d.txt" });
+
+    // A late event from an earlier transfer must not rewind the bar.
+    store.setTransferProgress({ id: "copy-0", current: 99, total: 99, name: "stale" });
+    expect(useFileManagerStore.getState().transfer).toMatchObject({ current: 4, name: "d.txt" });
+  });
+
+  it("asks the backend to cancel the running transfer", () => {
+    useFileManagerStore.setState({
+      transfer: { id: "copy-7", op: "copy", pane: "left", current: 1, total: 5, name: "x" },
+    });
+    useFileManagerStore.getState().cancelTransfer();
+    expect(commands.cancelTransfer).toHaveBeenCalledWith("copy-7");
   });
 });

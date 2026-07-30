@@ -1,5 +1,7 @@
 use crate::error::FsError;
-use crate::operations::transfer::{resolve_destination, ConflictPolicy, FailedItem, TransferReport};
+use crate::operations::transfer::{
+    resolve_destination, ConflictPolicy, FailedItem, TransferControl, TransferReport,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -58,6 +60,23 @@ pub fn move_paths_with(
     destination_dir: &Path,
     policy: ConflictPolicy,
 ) -> Result<TransferReport, FsError> {
+    let never = std::sync::atomic::AtomicBool::new(false);
+    let noop = |_: usize, _: usize, _: &str| {};
+    move_paths_controlled(
+        sources,
+        destination_dir,
+        policy,
+        &TransferControl { cancel: &never, on_progress: &noop },
+    )
+}
+
+/// As `move_paths_with`, but cancellable and reporting progress per item.
+pub fn move_paths_controlled(
+    sources: &[PathBuf],
+    destination_dir: &Path,
+    policy: ConflictPolicy,
+    control: &TransferControl<'_>,
+) -> Result<TransferReport, FsError> {
     if !destination_dir.is_dir() {
         return Err(FsError::NotADirectory(format!(
             "destination is not a directory: {}",
@@ -67,7 +86,16 @@ pub fn move_paths_with(
 
     let mut report = TransferReport::default();
 
-    for source in sources {
+    for (i, source) in sources.iter().enumerate() {
+        if control.is_cancelled() {
+            break;
+        }
+        let name = source
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        (control.on_progress)(i, sources.len(), &name);
+
         match move_one(source, destination_dir, policy) {
             Ok(Some(())) => report.completed.push(source.display().to_string()),
             Ok(None) => report.skipped.push(source.display().to_string()),

@@ -8,6 +8,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(commands::SizeCalculations::default())
+        .manage(commands::Transfers::default())
         .invoke_handler(tauri::generate_handler![
             commands::list_directory,
             commands::default_start_dir,
@@ -20,6 +21,7 @@ pub fn run() {
             commands::copy_entries_with,
             commands::move_entries_with,
             commands::check_conflicts,
+            commands::cancel_transfer,
             commands::move_entries,
             commands::trash_entries,
         ])
