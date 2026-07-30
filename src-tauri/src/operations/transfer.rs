@@ -142,33 +142,123 @@ pub fn unique_destination(dest: &Path) -> Result<PathBuf, FsError> {
     )))
 }
 
+/// Where an item should be written, and whether an existing entry is being replaced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Resolution {
+    /// Nothing is in the way; write straight here.
+    Direct(PathBuf),
+    /// Write to `staging`, then swap it into `target` once it is complete.
+    Replace { staging: PathBuf, target: PathBuf },
+    /// Leave the existing entry alone.
+    Skip,
+}
+
+impl Resolution {
+    /// The path to write to.
+    pub fn write_path(&self) -> Option<&Path> {
+        match self {
+            Self::Direct(p) => Some(p),
+            Self::Replace { staging, .. } => Some(staging),
+            Self::Skip => None,
+        }
+    }
+}
+
+/// Distinguishes concurrent staging paths within a process.
+static STAGE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// A hidden sibling of `dest` to assemble the replacement in.
+///
+/// A sibling specifically, so it lands on the same filesystem and the final swap
+/// is a rename rather than another copy.
+fn staging_path(dest: &Path) -> Result<PathBuf, FsError> {
+    let parent = dest.parent().unwrap_or(Path::new("."));
+    let base = dest
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "item".to_string());
+    for _ in 0..1000 {
+        let n = STAGE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let candidate = parent.join(format!(".{base}.dcmd-incoming-{n}"));
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(FsError::Io(format!(
+        "could not find a free staging name next to {}",
+        dest.display()
+    )))
+}
+
 /// Applies the policy to a destination that may already exist.
 ///
-/// `Ok(None)` means the item should be skipped.
-pub fn resolve_destination(
-    dest: &Path,
-    policy: ConflictPolicy,
-) -> Result<Option<PathBuf>, FsError> {
+/// Deliberately performs no deletion. Replacing used to remove the existing entry
+/// up front, which meant any later failure — a partial copy, a permission error, a
+/// cancellation — left the user with neither their old data nor the new. The
+/// replacement is assembled beside the target instead and swapped in by
+/// `commit_replace` only once it is complete.
+pub fn resolve_destination(dest: &Path, policy: ConflictPolicy) -> Result<Resolution, FsError> {
     if !dest.exists() {
-        return Ok(Some(dest.to_path_buf()));
+        return Ok(Resolution::Direct(dest.to_path_buf()));
     }
     match policy {
         ConflictPolicy::Fail => Err(FsError::AlreadyExists(format!(
             "destination already exists: {}",
             dest.display()
         ))),
-        ConflictPolicy::Skip => Ok(None),
-        ConflictPolicy::KeepBoth => Ok(Some(unique_destination(dest)?)),
-        ConflictPolicy::Overwrite => {
-            // Remove the existing entry so a directory is replaced rather than
-            // merged, which keeps the result predictable.
-            if dest.is_dir() {
-                std::fs::remove_dir_all(dest)?;
+        ConflictPolicy::Skip => Ok(Resolution::Skip),
+        ConflictPolicy::KeepBoth => Ok(Resolution::Direct(unique_destination(dest)?)),
+        ConflictPolicy::Overwrite => Ok(Resolution::Replace {
+            staging: staging_path(dest)?,
+            target: dest.to_path_buf(),
+        }),
+    }
+}
+
+/// Swaps a fully written `staging` entry into `target`, replacing what was there.
+///
+/// The old entry is moved aside first and only removed once the new one is in
+/// place, so a failure at any point leaves one intact copy rather than none.
+pub fn commit_replace(staging: &Path, target: &Path) -> Result<(), FsError> {
+    // A plain rename atomically replaces an existing file on Unix, which is the
+    // common case and leaves no window at all.
+    if !target.is_dir() && std::fs::rename(staging, target).is_ok() {
+        return Ok(());
+    }
+
+    // Directories, and platforms where rename will not clobber, need the old
+    // entry out of the way first — but preserved until the new one is in place.
+    let backup = staging_path(target)?;
+    std::fs::rename(target, &backup)?;
+
+    match std::fs::rename(staging, target) {
+        Ok(()) => {
+            // Only now is the old copy redundant.
+            if backup.is_dir() {
+                let _ = std::fs::remove_dir_all(&backup);
             } else {
-                std::fs::remove_file(dest)?;
+                let _ = std::fs::remove_file(&backup);
             }
-            Ok(Some(dest.to_path_buf()))
+            Ok(())
         }
+        Err(e) => {
+            // Put the original back rather than leaving the target missing.
+            let _ = std::fs::rename(&backup, target);
+            Err(FsError::Io(format!(
+                "could not replace {}: {e}",
+                target.display()
+            )))
+        }
+    }
+}
+
+/// Removes a half-written staging entry. Best effort: the original is untouched
+/// either way, so a leftover temp is preferable to reporting a second failure.
+pub fn discard_staging(staging: &Path) {
+    if staging.is_dir() {
+        let _ = std::fs::remove_dir_all(staging);
+    } else if staging.exists() {
+        let _ = std::fs::remove_file(staging);
     }
 }
 
@@ -211,23 +301,89 @@ mod tests {
     }
 
     #[test]
-    fn skip_reports_no_destination() {
+    fn skip_resolves_to_skip() {
         let tmp = TempDir::new().unwrap();
         let f = tmp.path().join("a.txt");
         fs::write(&f, "x").unwrap();
-        assert_eq!(resolve_destination(&f, ConflictPolicy::Skip).unwrap(), None);
+        assert_eq!(resolve_destination(&f, ConflictPolicy::Skip).unwrap(), Resolution::Skip);
     }
 
+    // The whole point of the redesign: resolving must not touch anything on disk.
     #[test]
-    fn overwrite_clears_an_existing_directory_first() {
+    fn overwrite_deletes_nothing_when_resolved() {
         let tmp = TempDir::new().unwrap();
         let d = tmp.path().join("d");
         fs::create_dir(&d).unwrap();
         fs::write(d.join("old.txt"), "old").unwrap();
 
         let resolved = resolve_destination(&d, ConflictPolicy::Overwrite).unwrap();
-        assert_eq!(resolved, Some(d.clone()));
-        assert!(!d.exists(), "existing directory should have been removed");
+        match resolved {
+            Resolution::Replace { staging, target } => {
+                assert_eq!(target, d);
+                assert_ne!(staging, d);
+                assert!(!staging.exists(), "staging should not be pre-created");
+            }
+            other => panic!("expected Replace, got {other:?}"),
+        }
+        assert!(d.exists(), "resolving must not delete the existing entry");
+        assert!(d.join("old.txt").exists(), "contents must be untouched");
+    }
+
+    #[test]
+    fn staging_is_a_sibling_so_the_swap_is_a_rename() {
+        let tmp = TempDir::new().unwrap();
+        let f = tmp.path().join("a.txt");
+        fs::write(&f, "x").unwrap();
+        if let Resolution::Replace { staging, .. } =
+            resolve_destination(&f, ConflictPolicy::Overwrite).unwrap()
+        {
+            assert_eq!(staging.parent(), f.parent());
+        } else {
+            panic!("expected Replace");
+        }
+    }
+
+    #[test]
+    fn commit_replaces_a_file_and_removes_the_staging_copy() {
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join("a.txt");
+        fs::write(&target, "old").unwrap();
+        let staging = tmp.path().join(".a.txt.incoming");
+        fs::write(&staging, "new").unwrap();
+
+        commit_replace(&staging, &target).unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "new");
+        assert!(!staging.exists());
+    }
+
+    #[test]
+    fn commit_replaces_a_directory_wholesale() {
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join("d");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("old.txt"), "old").unwrap();
+
+        let staging = tmp.path().join(".d.incoming");
+        fs::create_dir(&staging).unwrap();
+        fs::write(staging.join("new.txt"), "new").unwrap();
+
+        commit_replace(&staging, &target).unwrap();
+        assert!(target.join("new.txt").exists());
+        assert!(!target.join("old.txt").exists(), "replace should not merge");
+        assert!(!staging.exists());
+    }
+
+    #[test]
+    fn discarding_staging_leaves_the_target_alone() {
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join("a.txt");
+        fs::write(&target, "original").unwrap();
+        let staging = tmp.path().join(".a.txt.incoming");
+        fs::write(&staging, "half-written").unwrap();
+
+        discard_staging(&staging);
+        assert!(!staging.exists());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "original");
     }
 
     #[test]
@@ -251,7 +407,10 @@ mod tests {
             ConflictPolicy::Overwrite,
             ConflictPolicy::KeepBoth,
         ] {
-            assert_eq!(resolve_destination(&f, p).unwrap(), Some(f.clone()));
+            assert_eq!(
+                resolve_destination(&f, p).unwrap(),
+                Resolution::Direct(f.clone())
+            );
         }
     }
 }

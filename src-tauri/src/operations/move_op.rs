@@ -1,7 +1,7 @@
 use crate::error::FsError;
 use crate::operations::transfer::{
-    check_not_same_directory, resolve_destination, ConflictPolicy, FailedItem, TransferControl,
-    TransferReport,
+    check_not_same_directory, commit_replace, discard_staging, resolve_destination, ConflictPolicy,
+    FailedItem, Resolution, TransferControl, TransferReport,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -134,15 +134,33 @@ fn move_one(
     // Before resolve_destination, which under Overwrite would delete the source.
     check_not_same_directory(source, destination_dir)?;
 
-    let dest = match resolve_destination(&destination_dir.join(file_name), policy)? {
-        Some(d) => d,
+    let resolution = resolve_destination(&destination_dir.join(file_name), policy)?;
+    let dest = match resolution.write_path() {
+        Some(d) => d.to_path_buf(),
         None => return Ok(None),
     };
 
-    if fs::rename(source, &dest).is_err() {
-        copy_then_delete(source, &dest)?;
+    let written = if fs::rename(source, &dest).is_ok() {
+        Ok(())
+    } else {
+        copy_then_delete(source, &dest)
+    };
+
+    match (&resolution, written) {
+        (Resolution::Direct(_), r) => r.map(|_| Some(())),
+        (Resolution::Replace { staging, target }, Ok(())) => {
+            commit_replace(staging, target).map(|_| Some(()))
+        }
+        (Resolution::Replace { staging, .. }, Err(e)) => {
+            // The source may already be gone if copy_then_delete got that far;
+            // discarding the staging copy would then lose it, so keep it.
+            if source.exists() {
+                discard_staging(staging);
+            }
+            Err(e)
+        }
+        (Resolution::Skip, _) => Ok(None),
     }
-    Ok(Some(()))
 }
 
 fn copy_then_delete(src: &Path, dst: &Path) -> Result<(), FsError> {

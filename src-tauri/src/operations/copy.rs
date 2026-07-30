@@ -1,7 +1,7 @@
 use crate::error::FsError;
 use crate::operations::transfer::{
-    check_not_same_directory, resolve_destination, ConflictPolicy, FailedItem, TransferControl,
-    TransferReport,
+    check_not_same_directory, commit_replace, discard_staging, resolve_destination, ConflictPolicy,
+    FailedItem, Resolution, TransferControl, TransferReport,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -110,18 +110,38 @@ fn copy_one(
     // Before resolve_destination, which under Overwrite would delete the source.
     check_not_same_directory(source, destination_dir)?;
 
-    let dest = match resolve_destination(&destination_dir.join(file_name), policy)? {
-        Some(d) => d,
+    let resolution = resolve_destination(&destination_dir.join(file_name), policy)?;
+    let dest = match resolution.write_path() {
+        Some(d) => d.to_path_buf(),
         None => return Ok(None),
     };
 
     if source.is_dir() {
         check_not_into_itself(source, destination_dir)?;
-        copy_dir_recursive(source, &dest, &mut Vec::new(), control)?;
-    } else {
-        fs::copy(source, &dest)?;
     }
-    Ok(Some(()))
+
+    let written = if source.is_dir() {
+        copy_dir_recursive(source, &dest, &mut Vec::new(), control)
+    } else {
+        fs::copy(source, &dest).map(|_| ()).map_err(Into::into)
+    };
+
+    match (&resolution, written) {
+        // Nothing was in the way; the copy is already where it belongs.
+        (Resolution::Direct(_), r) => r.map(|_| Some(())),
+
+        // Only swap the replacement in once it is complete. On failure the
+        // original is left exactly as it was.
+        (Resolution::Replace { staging, target }, Ok(())) => {
+            commit_replace(staging, target).map(|_| Some(()))
+        }
+        (Resolution::Replace { staging, .. }, Err(e)) => {
+            discard_staging(staging);
+            Err(e)
+        }
+
+        (Resolution::Skip, _) => Ok(None),
+    }
 }
 
 /// Rejects copying a directory into itself or anywhere beneath it, which would
@@ -481,5 +501,127 @@ mod same_dir_tests {
         let report = copy_paths_with(&[f], &dest, ConflictPolicy::Fail).unwrap();
         assert_eq!(report.completed.len(), 1);
         assert_eq!(fs::read_to_string(dest.join("a.txt")).unwrap(), "hello");
+    }
+}
+
+#[cfg(test)]
+mod replace_safety_tests {
+    use super::*;
+    use crate::operations::transfer::TransferControl;
+    use std::sync::atomic::AtomicBool;
+    use tempfile::TempDir;
+
+    fn ctl<'a>(
+        c: &'a AtomicBool,
+        f: &'a (dyn Fn(usize, usize, &str) + Send + Sync),
+    ) -> TransferControl<'a> {
+        TransferControl { cancel: c, on_progress: f }
+    }
+
+    /// The core guarantee: if a replacement cannot be completed, the user keeps
+    /// what they had. Previously the target was deleted up front, so a failure
+    /// left them with neither the old data nor the new.
+    #[test]
+    fn a_cancelled_replace_leaves_the_original_intact() {
+        let tmp = TempDir::new().unwrap();
+
+        let src = tmp.path().join("src");
+        fs::create_dir(&src).unwrap();
+        let payload = src.join("data");
+        fs::create_dir(&payload).unwrap();
+        for i in 0..200 {
+            fs::write(payload.join(format!("f{i}.bin")), "xxxx").unwrap();
+        }
+
+        let dest = tmp.path().join("dest");
+        fs::create_dir(&dest).unwrap();
+        let existing = dest.join("src");
+        fs::create_dir(&existing).unwrap();
+        fs::write(existing.join("precious.txt"), "must survive").unwrap();
+
+        // Cancelled before it can finish, mid-replace.
+        let cancel = AtomicBool::new(true);
+        let noop = |_: usize, _: usize, _: &str| {};
+        let report =
+            copy_paths_controlled(&[src], &dest, ConflictPolicy::Overwrite, &ctl(&cancel, &noop))
+                .unwrap();
+
+        assert!(existing.exists(), "the existing directory was destroyed");
+        assert_eq!(
+            fs::read_to_string(existing.join("precious.txt")).unwrap(),
+            "must survive",
+            "existing contents were lost"
+        );
+        assert!(report.completed.is_empty());
+    }
+
+    #[test]
+    fn a_failed_replace_leaves_the_original_and_no_staging_debris() {
+        let tmp = TempDir::new().unwrap();
+        let dest = tmp.path().join("dest");
+        fs::create_dir(&dest).unwrap();
+        fs::write(dest.join("gone.txt"), "original").unwrap();
+
+        // Source vanishes, so the copy cannot succeed.
+        let missing = tmp.path().join("elsewhere").join("gone.txt");
+
+        let report =
+            copy_paths_with(&[missing], &dest, ConflictPolicy::Overwrite).unwrap();
+
+        assert_eq!(report.failed.len(), 1);
+        assert_eq!(
+            fs::read_to_string(dest.join("gone.txt")).unwrap(),
+            "original",
+            "original was disturbed by a failed replace"
+        );
+        let debris: Vec<_> = fs::read_dir(&dest)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().contains("dcmd-incoming"))
+            .collect();
+        assert!(debris.is_empty(), "staging debris left behind");
+    }
+
+    #[test]
+    fn a_successful_replace_swaps_the_contents_and_cleans_up() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        fs::create_dir(&src).unwrap();
+        fs::write(src.join("new.txt"), "new").unwrap();
+
+        let dest = tmp.path().join("dest");
+        fs::create_dir(&dest).unwrap();
+        let existing = dest.join("src");
+        fs::create_dir(&existing).unwrap();
+        fs::write(existing.join("old.txt"), "old").unwrap();
+
+        let report = copy_paths_with(&[src], &dest, ConflictPolicy::Overwrite).unwrap();
+
+        assert_eq!(report.completed.len(), 1, "{:?}", report.failed);
+        assert!(existing.join("new.txt").exists());
+        assert!(!existing.join("old.txt").exists(), "replace should not merge");
+        let debris: Vec<_> = fs::read_dir(&dest)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().contains("dcmd-incoming"))
+            .collect();
+        assert!(debris.is_empty(), "staging debris left behind");
+    }
+
+    #[test]
+    fn replacing_a_single_file_works_and_keeps_the_new_contents() {
+        let tmp = TempDir::new().unwrap();
+        let src_dir = tmp.path().join("s");
+        fs::create_dir(&src_dir).unwrap();
+        let src = src_dir.join("a.txt");
+        fs::write(&src, "new").unwrap();
+
+        let dest = tmp.path().join("d");
+        fs::create_dir(&dest).unwrap();
+        fs::write(dest.join("a.txt"), "old").unwrap();
+
+        let report = copy_paths_with(&[src], &dest, ConflictPolicy::Overwrite).unwrap();
+        assert_eq!(report.completed.len(), 1, "{:?}", report.failed);
+        assert_eq!(fs::read_to_string(dest.join("a.txt")).unwrap(), "new");
     }
 }
