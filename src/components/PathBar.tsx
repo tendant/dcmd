@@ -1,5 +1,6 @@
 import { useRef, useEffect } from "react";
 import { useFileManagerStore, PaneId } from "../state/fileManagerStore";
+import { MOD } from "../platform";
 
 interface PathBarProps {
   path: string;
@@ -50,7 +51,7 @@ export function PathBar({ path, paneId, isEditing }: PathBarProps) {
     <div
       onClick={() => startEditingPath(paneId)}
       className="bg-gray-100 dark:bg-gray-800 px-3 py-2 border-b border-gray-300 dark:border-gray-700 text-sm font-mono text-gray-900 dark:text-gray-100 truncate cursor-text hover:bg-gray-200 dark:hover:bg-gray-700"
-      title="Click to edit path, or press Ctrl+L"
+      title={`Click to edit path, or press ${MOD}L`}
     >
       {path || "/"}
     </div>

@@ -490,3 +490,14 @@ describe("transfer outcome reporting", () => {
     expect(useFileManagerStore.getState().panes.left.error).toBeNull();
   });
 });
+
+describe("path editing", () => {
+  it("can be started and cancelled from the store", () => {
+    seedPane(1);
+    const store = useFileManagerStore.getState();
+    store.startEditingPath("left");
+    expect(useFileManagerStore.getState().panes.left.isEditingPath).toBe(true);
+    store.cancelPathEdit("left");
+    expect(useFileManagerStore.getState().panes.left.isEditingPath).toBe(false);
+  });
+});

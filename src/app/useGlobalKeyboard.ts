@@ -21,8 +21,10 @@ export function useGlobalKeyboard() {
       // filter behind it. The dialog handles its own Escape.
       if (store.dialog) return;
 
-      // Ctrl+L to edit path (works even in input fields for this specific case)
-      if ((e.ctrlKey || e.metaKey) && e.key === "l") {
+      // Edit the path. Matched case-insensitively: with Caps Lock or Shift held,
+      // e.key is "L" and a literal comparison silently fails. Handled before the
+      // input guard so it also re-focuses the path field while already editing.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
         e.preventDefault();
         const pane = store.activePane;
         store.startEditingPath(pane);
