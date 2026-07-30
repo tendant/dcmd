@@ -44,3 +44,29 @@ mod tests {
         assert_eq!(json, r#"{"kind":"cancelled","message":"stopped"}"#);
     }
 }
+
+#[cfg(test)]
+mod kind_contract {
+    use super::*;
+
+    /// The frontend branches on these exact strings to decide what to tell the
+    /// user. Renaming a variant without updating errors.ts would silently fall
+    /// back to the generic message, so the wire names are pinned here.
+    #[test]
+    fn serialised_kind_names_are_stable() {
+        let cases = [
+            (FsError::NotFound("p".into()), "notFound"),
+            (FsError::AlreadyExists("p".into()), "alreadyExists"),
+            (FsError::PermissionDenied("p".into()), "permissionDenied"),
+            (FsError::InvalidName("p".into()), "invalidName"),
+            (FsError::NotADirectory("p".into()), "notADirectory"),
+            (FsError::Trash("p".into()), "trash"),
+            (FsError::Io("p".into()), "io"),
+            (FsError::Cancelled("p".into()), "cancelled"),
+        ];
+        for (err, expected) in cases {
+            let json = serde_json::to_string(&err).unwrap();
+            assert_eq!(json, format!("{{\"kind\":\"{expected}\",\"message\":\"p\"}}"));
+        }
+    }
+}

@@ -100,7 +100,7 @@ describe("the synthetic parent entry", () => {
     seedPane(0); // cursor on ".."
     await useFileManagerStore.getState().trashSelection("left");
     expect(commands.trashEntries).not.toHaveBeenCalled();
-    expect(useFileManagerStore.getState().panes.left.error).toBe("Nothing to delete");
+    expect(useFileManagerStore.getState().panes.left.error?.message).toBe("Nothing to delete");
   });
 });
 
@@ -215,7 +215,7 @@ describe("refresh", () => {
     await useFileManagerStore.getState().refresh("left");
     const s = useFileManagerStore.getState().panes.left;
     expect(s.loading).toBe(false);
-    expect(s.error).toBe("boom");
+    expect(s.error?.message).toBe("Boom.");
   });
 });
 
@@ -271,7 +271,7 @@ describe("conflict handling", () => {
       .getState()
       .performTransfer("copy", "left", ["/left/a.txt"], "/right", "fail");
 
-    const err = useFileManagerStore.getState().panes.left.error ?? "";
+    const err = useFileManagerStore.getState().panes.left.error?.message ?? "";
     expect(err).toContain("1 failed");
     expect(err).toContain("permission denied");
     expect(err).toContain("1 skipped");
@@ -305,7 +305,7 @@ describe("delete confirmation", () => {
     seedPane(0);
     useFileManagerStore.getState().requestTrash("left");
     expect(useFileManagerStore.getState().dialog).toBeNull();
-    expect(useFileManagerStore.getState().panes.left.error).toBe("Nothing to delete");
+    expect(useFileManagerStore.getState().panes.left.error?.message).toBe("Nothing to delete");
   });
 });
 
@@ -333,7 +333,7 @@ describe("transfer progress", () => {
       .getState()
       .performTransfer("copy", "left", ["/left/a.txt"], "/right", "fail");
     expect(useFileManagerStore.getState().transfer).toBeNull();
-    expect(useFileManagerStore.getState().panes.left.error).toBe("nope");
+    expect(useFileManagerStore.getState().panes.left.error?.message).toBe("Nope.");
   });
 
   it("applies progress events only to the matching transfer", () => {
@@ -356,5 +356,33 @@ describe("transfer progress", () => {
     });
     useFileManagerStore.getState().cancelTransfer();
     expect(commands.cancelTransfer).toHaveBeenCalledWith("copy-7");
+  });
+});
+
+describe("error reporting", () => {
+  it("does not show a user cancellation as a failure", () => {
+    seedPane(1);
+    useFileManagerStore.getState().reportError("left", { kind: "cancelled", message: "stopped" });
+    expect(useFileManagerStore.getState().panes.left.error).toBeNull();
+  });
+
+  it("maps a backend error into a message with a hint", () => {
+    seedPane(1);
+    useFileManagerStore
+      .getState()
+      .reportError("left", { kind: "permissionDenied", message: "denied: /x/y.txt" }, "copy");
+    const e = useFileManagerStore.getState().panes.left.error;
+    expect(e?.kind).toBe("permissionDenied");
+    expect(e?.hint).toBeTruthy();
+    expect(e?.detail).toContain("/x/y.txt");
+  });
+
+  it("can be dismissed", () => {
+    seedPane(1);
+    const store = useFileManagerStore.getState();
+    store.reportError("left", { kind: "io", message: "bad" });
+    expect(useFileManagerStore.getState().panes.left.error).not.toBeNull();
+    store.setPaneError("left", null);
+    expect(useFileManagerStore.getState().panes.left.error).toBeNull();
   });
 });

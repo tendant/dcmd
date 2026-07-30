@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { FileEntry } from "../types/fileEntry";
 import * as commands from "../tauri/commands";
 import type { ConflictPolicy } from "../tauri/commands";
+import { toAppError, isCancellation, type AppError, type ErrorContext } from "../errors";
 
 export type PaneId = "left" | "right";
 
@@ -17,7 +18,7 @@ export interface PaneState {
   cursor: number;
   rangeStart: number | null;
   loading: boolean;
-  error: string | null;
+  error: AppError | null;
   renameMode: RenameMode;
   isEditingPath: boolean;
   /** Type-to-filter text; empty means no filter. Resolve rows via visibleEntries(). */
@@ -75,7 +76,8 @@ export interface FileManagerState {
   toggleSelection: (pane: PaneId, path: string) => void;
   setFilter: (pane: PaneId, filter: string) => void;
   clearFilter: (pane: PaneId) => void;
-  setPaneError: (pane: PaneId, message: string | null) => void;
+  setPaneError: (pane: PaneId, error: AppError | string | null) => void;
+  reportError: (pane: PaneId, err: unknown, context?: ErrorContext) => void;
   /** How many entries an operation would act on (selection, else cursor row). */
   targetCount: (pane: PaneId) => number;
   openEntry: (pane: PaneId, path: string) => Promise<void>;
@@ -116,12 +118,6 @@ export interface FileManagerState {
 
 /** Monotonic id source; Date.now() would collide on fast successive transfers. */
 let transferSeq = 1;
-
-/** Pulls a readable message out of whatever the Tauri layer threw. */
-const errorMessage = (err: unknown): string =>
-  err && typeof err === "object" && "message" in err
-    ? String((err as { message: unknown }).message)
-    : String(err);
 
 /**
  * The entries actually shown in a pane, after its type-to-filter text.
@@ -219,30 +215,13 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         },
       }));
     } catch (err) {
-      let message = "Unknown error";
-
-      if (err && typeof err === "object") {
-        // Handle Rust error response from Tauri (e.g., {kind: "...", message: "..."})
-        if ("message" in err) {
-          message = String((err as any).message);
-        } else {
-          message = JSON.stringify(err);
-        }
-      } else if (err instanceof Error) {
-        message = err.message;
-      } else {
-        message = String(err);
-      }
-
-      console.error(`Navigate to ${path} failed:`, message);
-
       set((state) => ({
         panes: {
           ...state.panes,
           [pane]: {
             ...state.panes[pane],
             loading: false,
-            error: message,
+            error: toAppError(err, "list"),
             entries: [],
           },
         },
@@ -310,14 +289,10 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         return { panes: { ...state.panes, [pane]: { ...next, cursor } } };
       });
     } catch (err) {
-      const message =
-        err && typeof err === "object" && "message" in err
-          ? String((err as any).message)
-          : String(err);
       set((state) => ({
         panes: {
           ...state.panes,
-          [pane]: { ...state.panes[pane], loading: false, error: message },
+          [pane]: { ...state.panes[pane], loading: false, error: toAppError(err, "list") },
         },
       }));
     }
@@ -383,7 +358,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       }
       await state.performTransfer(op, active, sources, destination, "fail");
     } catch (err) {
-      state.setPaneError(active, errorMessage(err));
+      state.reportError(active, err, op);
     }
   },
 
@@ -419,7 +394,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       if (report.skipped.length > 0) parts.push(`${report.skipped.length} skipped`);
       state.setPaneError(pane, parts.length > 0 ? `${op}: ${parts.join(", ")}` : null);
     } catch (err) {
-      state.setPaneError(pane, errorMessage(err));
+      state.reportError(pane, err, op);
     } finally {
       // Clear only if this is still the transfer on screen.
       set((s2) => (s2.transfer?.id === id ? { transfer: null } : {}));
@@ -457,13 +432,25 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     get().setFilter(pane, "");
   },
 
-  setPaneError: (pane, message) => {
+  setPaneError: (pane, error) => {
+    const normalised: AppError | null =
+      error === null
+        ? null
+        : typeof error === "string"
+          ? { kind: "unknown", message: error }
+          : error;
     set((state) => ({
       panes: {
         ...state.panes,
-        [pane]: { ...state.panes[pane], error: message },
+        [pane]: { ...state.panes[pane], error: normalised },
       },
     }));
+  },
+
+  /** Records a failure against a pane, mapped for display. Cancellations are dropped. */
+  reportError: (pane, err, context) => {
+    if (isCancellation(err)) return;
+    get().setPaneError(pane, toAppError(err, context));
   },
 
   targetCount: (pane) => targetPaths(get().panes[pane]).length,
@@ -472,17 +459,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     try {
       await commands.openEntry(path);
     } catch (err) {
-      const message =
-        err && typeof err === "object" && "message" in err
-          ? String((err as any).message)
-          : String(err);
-      console.error(`Failed to open ${path}:`, message);
-      set((state) => ({
-        panes: {
-          ...state.panes,
-          [pane]: { ...state.panes[pane], error: `Could not open file: ${message}` },
-        },
-      }));
+      get().reportError(pane, err, "open");
     }
   },
 
@@ -655,24 +632,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       const i = visibleEntries(after).findIndex((e) => e.path === created.path);
       if (i >= 0) get().setCursor(pane, i + 1);
     } catch (err) {
-      let message = "Failed to create folder";
-      if (err && typeof err === "object" && "message" in err) {
-        message = String((err as any).message);
-      } else if (err instanceof Error) {
-        message = err.message;
-      }
-
-      console.error("Mkdir failed:", message);
-
-      set((state) => ({
-        panes: {
-          ...state.panes,
-          [pane]: {
-            ...state.panes[pane],
-            error: message,
-          },
-        },
-      }));
+      get().reportError(pane, err, "create folder");
     }
   },
 
@@ -684,18 +644,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       state.cancelInlineEdit(pane);
       await state.refresh(pane);
     } catch (err) {
-      const message = typeof err === "object" && err !== null && "message" in err
-        ? String((err as { message: string }).message)
-        : String(err);
-      set((state) => ({
-        panes: {
-          ...state.panes,
-          [pane]: {
-            ...state.panes[pane],
-            error: message,
-          },
-        },
-      }));
+      get().reportError(pane, err, "rename");
     }
   },
 
@@ -730,18 +679,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       await state.refresh(other);
       state.clearSelection(active);
     } catch (err) {
-      const message = typeof err === "object" && err !== null && "message" in err
-        ? String((err as { message: string }).message)
-        : String(err);
-      set((state) => ({
-        panes: {
-          ...state.panes,
-          [other]: {
-            ...state.panes[other],
-            error: message,
-          },
-        },
-      }));
+      get().reportError(other, err, "copy");
     }
   },
 
@@ -764,18 +702,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       await state.refresh(other);
       state.clearSelection(active);
     } catch (err) {
-      const message = typeof err === "object" && err !== null && "message" in err
-        ? String((err as { message: string }).message)
-        : String(err);
-      set((state) => ({
-        panes: {
-          ...state.panes,
-          [other]: {
-            ...state.panes[other],
-            error: message,
-          },
-        },
-      }));
+      get().reportError(other, err, "move");
     }
   },
 
@@ -795,18 +722,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       await state.refresh(pane);
       state.clearSelection(pane);
     } catch (err) {
-      const message = typeof err === "object" && err !== null && "message" in err
-        ? String((err as { message: string }).message)
-        : String(err);
-      set((state) => ({
-        panes: {
-          ...state.panes,
-          [pane]: {
-            ...state.panes[pane],
-            error: message,
-          },
-        },
-      }));
+      get().reportError(pane, err, "delete");
     }
   },
 
