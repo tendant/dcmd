@@ -625,3 +625,138 @@ mod replace_safety_tests {
         assert_eq!(fs::read_to_string(dest.join("a.txt")).unwrap(), "new");
     }
 }
+
+#[cfg(test)]
+mod partial_conflict_tests {
+    use super::*;
+    use crate::operations::transfer::find_conflicts;
+    use tempfile::TempDir;
+
+    /// left/  a.txt, dup.txt, tree/{x.txt, sub/y.txt}, dup_dir/{new.txt}
+    /// right/ dup.txt, dup_dir/{old.txt}          <- two of four collide
+    fn fixture() -> (TempDir, PathBuf, PathBuf, Vec<PathBuf>) {
+        let tmp = TempDir::new().unwrap();
+        let left = tmp.path().join("left");
+        let right = tmp.path().join("right");
+        fs::create_dir_all(&left).unwrap();
+        fs::create_dir_all(&right).unwrap();
+
+        fs::write(left.join("a.txt"), "A").unwrap();
+        fs::write(left.join("dup.txt"), "LEFT-dup").unwrap();
+
+        let tree = left.join("tree");
+        fs::create_dir_all(tree.join("sub")).unwrap();
+        fs::write(tree.join("x.txt"), "X").unwrap();
+        fs::write(tree.join("sub/y.txt"), "Y").unwrap();
+
+        let dup_dir = left.join("dup_dir");
+        fs::create_dir(&dup_dir).unwrap();
+        fs::write(dup_dir.join("new.txt"), "NEW").unwrap();
+
+        // Only these two exist on the right.
+        fs::write(right.join("dup.txt"), "RIGHT-dup").unwrap();
+        let rdup = right.join("dup_dir");
+        fs::create_dir(&rdup).unwrap();
+        fs::write(rdup.join("old.txt"), "OLD").unwrap();
+
+        let sources = vec![
+            left.join("a.txt"),
+            left.join("dup.txt"),
+            left.join("tree"),
+            left.join("dup_dir"),
+        ];
+        (tmp, left, right, sources)
+    }
+
+    #[test]
+    fn conflicts_report_only_the_colliding_names() {
+        let (_t, _l, right, sources) = fixture();
+        let mut c = find_conflicts(&sources, &right);
+        c.sort();
+        assert_eq!(c, vec!["dup.txt", "dup_dir"]);
+    }
+
+    #[test]
+    fn skip_copies_the_rest_and_leaves_the_collisions_untouched() {
+        let (_t, _l, right, sources) = fixture();
+        let report = copy_paths_with(&sources, &right, ConflictPolicy::Skip).unwrap();
+
+        assert_eq!(report.completed.len(), 2, "{report:?}");
+        assert_eq!(report.skipped.len(), 2, "{report:?}");
+        assert!(report.failed.is_empty(), "{report:?}");
+
+        // Non-colliding items arrived, nested structure intact.
+        assert_eq!(fs::read_to_string(right.join("a.txt")).unwrap(), "A");
+        assert_eq!(fs::read_to_string(right.join("tree/sub/y.txt")).unwrap(), "Y");
+        // Colliding items untouched.
+        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
+        assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
+    }
+
+    #[test]
+    fn keep_both_writes_alongside_only_where_needed() {
+        let (_t, _l, right, sources) = fixture();
+        let report = copy_paths_with(&sources, &right, ConflictPolicy::KeepBoth).unwrap();
+
+        assert_eq!(report.completed.len(), 4, "{report:?}");
+        // Non-colliding keep their own names.
+        assert!(right.join("a.txt").exists());
+        assert!(right.join("tree/sub/y.txt").exists());
+        // Colliding get suffixed, originals preserved.
+        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
+        assert_eq!(fs::read_to_string(right.join("dup copy.txt")).unwrap(), "LEFT-dup");
+        assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
+        assert_eq!(fs::read_to_string(right.join("dup_dir copy/new.txt")).unwrap(), "NEW");
+    }
+
+    #[test]
+    fn overwrite_replaces_only_the_collisions() {
+        let (_t, _l, right, sources) = fixture();
+        let report = copy_paths_with(&sources, &right, ConflictPolicy::Overwrite).unwrap();
+
+        assert_eq!(report.completed.len(), 4, "{report:?}");
+        assert_eq!(fs::read_to_string(right.join("a.txt")).unwrap(), "A");
+        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "LEFT-dup");
+        assert_eq!(fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(), "NEW");
+    }
+
+    /// Replace is wholesale, not a merge: this is the semantic most likely to
+    /// surprise, so it is pinned rather than left implicit.
+    #[test]
+    fn overwriting_a_directory_discards_files_the_source_lacks() {
+        let (_t, _l, right, sources) = fixture();
+        copy_paths_with(&sources, &right, ConflictPolicy::Overwrite).unwrap();
+        assert!(
+            !right.join("dup_dir/old.txt").exists(),
+            "replace merged instead of replacing"
+        );
+    }
+
+    #[test]
+    fn fail_stops_the_colliding_items_but_still_copies_the_others() {
+        let (_t, _l, right, sources) = fixture();
+        let report = copy_paths_with(&sources, &right, ConflictPolicy::Fail).unwrap();
+
+        assert_eq!(report.completed.len(), 2, "{report:?}");
+        assert_eq!(report.failed.len(), 2, "{report:?}");
+        // The originals survive the refusal.
+        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
+        assert_eq!(fs::read_to_string(right.join("dup_dir/old.txt")).unwrap(), "OLD");
+        // And the non-colliding ones still went through.
+        assert!(right.join("tree/sub/y.txt").exists());
+    }
+
+    #[test]
+    fn deep_structure_is_copied_faithfully() {
+        let (_t, left, right, _s) = fixture();
+        let deep = left.join("tree/sub/deeper/deepest");
+        fs::create_dir_all(&deep).unwrap();
+        fs::write(deep.join("bottom.txt"), "BOTTOM").unwrap();
+
+        copy_paths_with(&[left.join("tree")], &right, ConflictPolicy::Fail).unwrap();
+        assert_eq!(
+            fs::read_to_string(right.join("tree/sub/deeper/deepest/bottom.txt")).unwrap(),
+            "BOTTOM"
+        );
+    }
+}

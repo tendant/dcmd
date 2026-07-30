@@ -280,3 +280,78 @@ mod same_dir_tests {
         assert_eq!(report.failed.len(), 1);
     }
 }
+
+#[cfg(test)]
+mod partial_conflict_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn fixture() -> (TempDir, PathBuf, PathBuf, Vec<PathBuf>) {
+        let tmp = TempDir::new().unwrap();
+        let left = tmp.path().join("left");
+        let right = tmp.path().join("right");
+        fs::create_dir_all(&left).unwrap();
+        fs::create_dir_all(&right).unwrap();
+
+        fs::write(left.join("a.txt"), "A").unwrap();
+        fs::write(left.join("dup.txt"), "LEFT-dup").unwrap();
+        let tree = left.join("tree");
+        fs::create_dir_all(tree.join("sub")).unwrap();
+        fs::write(tree.join("sub/y.txt"), "Y").unwrap();
+
+        fs::write(right.join("dup.txt"), "RIGHT-dup").unwrap();
+
+        let sources = vec![left.join("a.txt"), left.join("dup.txt"), left.join("tree")];
+        (tmp, left, right, sources)
+    }
+
+    /// The dangerous asymmetry: a moved item is removed from the source, so a
+    /// skipped item must be left behind rather than deleted. Losing it would mean
+    /// the file exists in neither pane.
+    #[test]
+    fn skipped_items_remain_in_the_source() {
+        let (_t, left, right, sources) = fixture();
+        let report = move_paths_with(&sources, &right, ConflictPolicy::Skip).unwrap();
+
+        assert_eq!(report.skipped.len(), 1, "{report:?}");
+        assert!(left.join("dup.txt").exists(), "skipped source was deleted");
+        assert_eq!(fs::read_to_string(left.join("dup.txt")).unwrap(), "LEFT-dup");
+        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
+
+        // The others did move, and are gone from the source.
+        assert!(!left.join("a.txt").exists());
+        assert!(right.join("tree/sub/y.txt").exists());
+        assert!(!left.join("tree").exists());
+    }
+
+    #[test]
+    fn failed_items_remain_in_the_source() {
+        let (_t, left, right, sources) = fixture();
+        let report = move_paths_with(&sources, &right, ConflictPolicy::Fail).unwrap();
+
+        assert_eq!(report.failed.len(), 1, "{report:?}");
+        assert!(left.join("dup.txt").exists(), "failed source was deleted");
+        assert!(!left.join("a.txt").exists(), "non-colliding item should have moved");
+    }
+
+    #[test]
+    fn overwrite_moves_the_collision_and_removes_the_source() {
+        let (_t, left, right, sources) = fixture();
+        let report = move_paths_with(&sources, &right, ConflictPolicy::Overwrite).unwrap();
+
+        assert_eq!(report.completed.len(), 3, "{report:?}");
+        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "LEFT-dup");
+        assert!(!left.join("dup.txt").exists());
+        assert!(right.join("tree/sub/y.txt").exists());
+    }
+
+    #[test]
+    fn keep_both_moves_the_collision_alongside() {
+        let (_t, left, right, sources) = fixture();
+        move_paths_with(&sources, &right, ConflictPolicy::KeepBoth).unwrap();
+
+        assert_eq!(fs::read_to_string(right.join("dup.txt")).unwrap(), "RIGHT-dup");
+        assert_eq!(fs::read_to_string(right.join("dup copy.txt")).unwrap(), "LEFT-dup");
+        assert!(!left.join("dup.txt").exists(), "source should be gone after a move");
+    }
+}
