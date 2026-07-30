@@ -1,7 +1,110 @@
-# Tauri + React + Typescript
+# dcmd
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+A keyboard-first dual-pane file manager for developers, built with Tauri 2,
+React and Rust.
 
-## Recommended IDE Setup
+Two panes side by side: one is the source, the other the destination. Copy,
+move, rename and delete work between them without ever reaching for the mouse.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+> **Status: early.** Browsing and file operations work and are covered by tests.
+> Sorting, pane resizing, bookmarks, search and preview are not implemented —
+> see [the design document](DCMD-Design-Document-v0.2.md) for what is planned.
+
+## Running it
+
+Requires [Rust](https://rustup.rs), Node 22+ and pnpm.
+
+```sh
+pnpm install
+pnpm tauri dev          # development, with hot reload
+pnpm tauri build        # release binary + installer
+```
+
+`pnpm dev` alone serves the frontend in a browser, where **no file operation
+will work** — every one of them goes through Rust, which is only present in the
+window `pnpm tauri dev` opens. The app says so rather than failing silently.
+
+## Keyboard
+
+| Action | Keys |
+| --- | --- |
+| Switch pane | `Tab` |
+| Open file or enter folder | `Enter`, or double-click |
+| Go up | `Backspace` |
+| Edit path | `⌘L` / `Ctrl+L` |
+| Refresh | `⌘R` / `Ctrl+R` |
+| Select, and size a folder | `Space` |
+| Extend selection | `Shift+↑↓`, `Shift+Click` |
+| Filter | just start typing |
+| Clear filter, cancel a transfer | `Esc` |
+| Copy to other pane | `F5` or `⌘⇧C` |
+| Move to other pane | `F6` or `⌘⇧M` |
+| New folder | `F7` or `⌘⇧N` |
+| Rename | `F2` or `⌘⇧R` |
+| Move to Trash | `F8` or `⌘⌫` |
+
+On macOS the F-keys are claimed by the system for dictation, Do Not Disturb and
+media control, so they only reach the app with `Fn` held, or with *Use F1, F2,
+etc. keys as standard function keys* enabled in System Settings. The `⌘`
+bindings exist for that reason and do the same thing.
+
+## Behaviour worth knowing
+
+**Folder sizes are not computed while listing.** A directory shows its item
+count; pressing `Space` computes the recursive byte total, which can take
+minutes on a large tree and is cancellable with `Space` again or `Esc`.
+Computing sizes eagerly meant listing a home directory walked millions of files
+before showing anything.
+
+**Folders merge.** Copying a folder onto one of the same name descends into it
+and applies your choice — skip, replace, keep both — to the individual files
+inside. Files the destination has and the source does not are left alone.
+
+**Nothing is deleted before its replacement exists.** Replacing assembles the
+incoming copy beside the target and swaps it in only once complete, so a failed
+or cancelled transfer leaves the original intact.
+
+**Deleting names what it will delete**, and goes to the system Trash rather than
+unlinking.
+
+## Development
+
+```sh
+pnpm test                       # frontend: store logic and components (jsdom)
+cd src-tauri && cargo test      # filesystem operations
+cargo clippy --all-targets -- -D warnings
+cargo fmt --check
+```
+
+CI runs all of the above, with the Rust suite across Linux, macOS and Windows —
+the filesystem behaviour is what differs between them.
+
+For exercising the dialogs by hand:
+
+```sh
+./scripts/make-fixture.sh       # builds /tmp/dcmd-fixture
+```
+
+It creates two directories that overlap in part, so a multi-item copy produces a
+partial conflict, plus deep nesting, awkward filenames and a bulk directory big
+enough to make progress and cancellation worth testing.
+
+## Layout
+
+```
+src/
+  app/          global keyboard handling, startup
+  components/   panes, list, dialogs, error and progress bars
+  state/        one Zustand store for both panes
+  tauri/        the only place that calls invoke()
+  errors.ts     backend errors -> messages a person can act on
+src-tauri/src/
+  commands/     the Tauri command surface
+  fs/           listing, entry model, atomic rename
+  operations/   copy, move, rename, mkdir, trash, transfer policy
+```
+
+The frontend holds no filesystem logic; every operation is a Rust command run
+off the UI thread. Cursor positions, selections and operation targets all
+resolve through `visibleEntries()` so that a filtered view cannot act on a row
+you cannot see.
