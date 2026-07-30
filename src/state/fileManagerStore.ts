@@ -50,6 +50,14 @@ export type DialogState =
       kind: "confirmTrash";
       pane: PaneId;
       paths: string[];
+    }
+  | {
+      /** Shown after a transfer that did not fully succeed, listing each item. */
+      kind: "transferOutcome";
+      op: "copy" | "move";
+      completed: number;
+      skipped: string[];
+      failed: commands.FailedItem[];
     };
 
 /** A transfer currently running, so it can be shown and cancelled. */
@@ -394,17 +402,21 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       await state.refresh(other);
       state.clearSelection(pane);
 
-      // A partial result must be stated, not hidden behind an apparent success.
-      const parts: string[] = [];
-      if (report.failed.length > 0) {
-        parts.push(
-          `${report.failed.length} failed (${report.failed[0].message}${
-            report.failed.length > 1 ? ", …" : ""
-          })`,
-        );
+      // Anything less than a clean success gets itemised. Collapsing seven
+      // failures into "7 failed (first message, …)" hides both which files were
+      // affected and why each one was, which is the information needed to act.
+      state.setPaneError(pane, null);
+      if (report.failed.length > 0 || report.skipped.length > 0) {
+        set({
+          dialog: {
+            kind: "transferOutcome",
+            op,
+            completed: report.completed.length,
+            skipped: report.skipped,
+            failed: report.failed,
+          },
+        });
       }
-      if (report.skipped.length > 0) parts.push(`${report.skipped.length} skipped`);
-      state.setPaneError(pane, parts.length > 0 ? `${op}: ${parts.join(", ")}` : null);
     } catch (err) {
       state.reportError(pane, err, op);
     } finally {

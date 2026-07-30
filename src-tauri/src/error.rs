@@ -23,6 +23,24 @@ pub enum FsError {
     Cancelled(String),
 }
 
+impl FsError {
+    /// The same wire name serde emits, so per-item failures can be mapped by the
+    /// frontend exactly like a top-level error. Kept in step with the serde
+    /// rename_all by the kind_contract test.
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            FsError::NotFound(_) => "notFound",
+            FsError::AlreadyExists(_) => "alreadyExists",
+            FsError::PermissionDenied(_) => "permissionDenied",
+            FsError::InvalidName(_) => "invalidName",
+            FsError::NotADirectory(_) => "notADirectory",
+            FsError::Trash(_) => "trash",
+            FsError::Io(_) => "io",
+            FsError::Cancelled(_) => "cancelled",
+        }
+    }
+}
+
 impl From<io::Error> for FsError {
     fn from(err: io::Error) -> Self {
         match err.kind() {
@@ -67,6 +85,9 @@ mod kind_contract {
         for (err, expected) in cases {
             let json = serde_json::to_string(&err).unwrap();
             assert_eq!(json, format!("{{\"kind\":\"{expected}\",\"message\":\"p\"}}"));
+            // Per-item failures report the kind through this accessor rather than
+            // through serde, so the two must not drift apart.
+            assert_eq!(err.kind_name(), expected);
         }
     }
 }

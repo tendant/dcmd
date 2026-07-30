@@ -79,10 +79,7 @@ pub fn copy_paths_controlled(
         match copy_one(source, destination_dir, policy, control) {
             Ok(Some(())) => report.completed.push(source.display().to_string()),
             Ok(None) => report.skipped.push(source.display().to_string()),
-            Err(e) => report.failed.push(FailedItem {
-                path: source.display().to_string(),
-                message: e.to_string(),
-            }),
+            Err(e) => report.failed.push(FailedItem::new(source, &e)),
         }
     }
 
@@ -760,3 +757,4 @@ mod partial_conflict_tests {
         );
     }
 }
+

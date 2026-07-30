@@ -265,16 +265,19 @@ describe("conflict handling", () => {
     (commands.copyEntriesWith as any).mockResolvedValueOnce({
       completed: ["/left/a.txt"],
       skipped: ["/left/b.txt"],
-      failed: [{ path: "/left/c.txt", message: "permission denied" }],
+      failed: [
+        { path: "/left/c.txt", kind: "permissionDenied", message: "permission denied" },
+      ],
     });
     await useFileManagerStore
       .getState()
       .performTransfer("copy", "left", ["/left/a.txt"], "/right", "fail");
 
-    const err = useFileManagerStore.getState().panes.left.error?.message ?? "";
-    expect(err).toContain("1 failed");
-    expect(err).toContain("permission denied");
-    expect(err).toContain("1 skipped");
+    const d = useFileManagerStore.getState().dialog as any;
+    expect(d?.kind).toBe("transferOutcome");
+    expect(d.failed).toHaveLength(1);
+    expect(d.skipped).toHaveLength(1);
+    expect(d.completed).toBe(1);
   });
 
   it("stays quiet when everything succeeded", async () => {
@@ -425,5 +428,65 @@ describe("same source and destination folder", () => {
     seedPane(1); // right pane is /right
     await useFileManagerStore.getState().requestTransfer("copy");
     expect(commands.checkConflicts).toHaveBeenCalled();
+  });
+});
+
+describe("transfer outcome reporting", () => {
+  it("itemises every failure instead of collapsing them into one line", async () => {
+    seedPane(1);
+    (commands.copyEntriesWith as any).mockResolvedValueOnce({
+      completed: ["/left/ok.txt"],
+      skipped: [],
+      failed: [
+        { path: "/left/a.txt", kind: "permissionDenied", message: "denied: /left/a.txt" },
+        { path: "/left/b.txt", kind: "notFound", message: "path does not exist: /left/b.txt" },
+        { path: "/left/c.txt", kind: "io", message: "disk full" },
+      ],
+    });
+    await useFileManagerStore
+      .getState()
+      .performTransfer("copy", "left", ["/left/a.txt"], "/right", "fail");
+
+    const d = useFileManagerStore.getState().dialog as any;
+    expect(d?.kind).toBe("transferOutcome");
+    expect(d.failed).toHaveLength(3);
+    // Each carries its own kind, so each can be phrased for the user.
+    expect(d.failed.map((f: any) => f.kind)).toEqual([
+      "permissionDenied",
+      "notFound",
+      "io",
+    ]);
+    expect(d.completed).toBe(1);
+  });
+
+  it("reports skipped items by name", async () => {
+    seedPane(1);
+    (commands.copyEntriesWith as any).mockResolvedValueOnce({
+      completed: ["/left/a.txt"],
+      skipped: ["/left/dup.txt", "/left/dup2.txt"],
+      failed: [],
+    });
+    await useFileManagerStore
+      .getState()
+      .performTransfer("copy", "left", ["/left/a.txt"], "/right", "skip");
+
+    const d = useFileManagerStore.getState().dialog as any;
+    expect(d?.kind).toBe("transferOutcome");
+    expect(d.skipped).toEqual(["/left/dup.txt", "/left/dup2.txt"]);
+  });
+
+  it("stays silent when everything succeeded", async () => {
+    seedPane(1);
+    (commands.copyEntriesWith as any).mockResolvedValueOnce({
+      completed: ["/left/a.txt"],
+      skipped: [],
+      failed: [],
+    });
+    await useFileManagerStore
+      .getState()
+      .performTransfer("copy", "left", ["/left/a.txt"], "/right", "fail");
+
+    expect(useFileManagerStore.getState().dialog).toBeNull();
+    expect(useFileManagerStore.getState().panes.left.error).toBeNull();
   });
 });

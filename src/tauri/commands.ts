@@ -50,10 +50,17 @@ export const trashEntries = (paths: string[]): Promise<void> =>
 
 export type ConflictPolicy = "fail" | "skip" | "overwrite" | "keepBoth";
 
+export interface FailedItem {
+  path: string;
+  /** FsError wire name, so each failure can be phrased for the user. */
+  kind: string;
+  message: string;
+}
+
 export interface TransferReport {
   completed: string[];
   skipped: string[];
-  failed: { path: string; message: string }[];
+  failed: FailedItem[];
 }
 
 /** Names already present at the destination, so the user can be asked first. */

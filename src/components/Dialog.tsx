@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useFileManagerStore } from "../state/fileManagerStore";
+import { toAppError } from "../errors";
 
 const basename = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 
@@ -72,7 +73,58 @@ export function Dialog() {
         className="w-full max-w-md rounded-lg bg-white p-4 shadow-xl dark:bg-gray-800 dark:text-gray-100"
         onClick={(e) => e.stopPropagation()}
       >
-        {dialog.kind === "conflict" ? (
+        {dialog.kind === "transferOutcome" ? (
+          <>
+            <h2 className="text-base font-semibold">
+              {dialog.failed.length > 0
+                ? `${dialog.op === "copy" ? "Copy" : "Move"} finished with problems`
+                : `${dialog.op === "copy" ? "Copy" : "Move"} finished`}
+            </h2>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+              {dialog.completed} succeeded
+              {dialog.skipped.length > 0 && `, ${dialog.skipped.length} skipped`}
+              {dialog.failed.length > 0 && `, ${dialog.failed.length} failed`}.
+            </p>
+
+            {dialog.failed.length > 0 && (
+              <div className="my-2 max-h-52 overflow-y-auto rounded border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950">
+                {dialog.failed.map((f) => {
+                  // Each failure is phrased individually; a shared summary cannot
+                  // say why this particular item did not make it.
+                  const mapped = toAppError({ kind: f.kind, message: f.message }, dialog.op);
+                  return (
+                    <div
+                      key={f.path}
+                      className="border-b border-red-100 px-3 py-1.5 last:border-0 dark:border-red-900"
+                    >
+                      <div className="truncate font-mono text-xs text-red-900 dark:text-red-100">
+                        {basename(f.path)}
+                      </div>
+                      <div className="text-xs text-red-800/80 dark:text-red-200/70">
+                        {mapped.message}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {dialog.skipped.length > 0 && (
+              <>
+                <div className="mt-2 text-xs font-medium text-gray-600 dark:text-gray-400">
+                  Skipped (already present):
+                </div>
+                <NameList names={dialog.skipped.map(basename)} limit={5} />
+              </>
+            )}
+
+            <div className="mt-3 flex justify-end">
+              <button ref={defaultRef} className={primary} onClick={dismiss}>
+                Close
+              </button>
+            </div>
+          </>
+        ) : dialog.kind === "conflict" ? (
           <>
             <h2 className="text-base font-semibold">
               {dialog.names.length === 1

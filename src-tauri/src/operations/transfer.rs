@@ -24,7 +24,20 @@ pub enum ConflictPolicy {
 #[serde(rename_all = "camelCase")]
 pub struct FailedItem {
     pub path: String,
+    /// Wire name of the FsError variant, so the frontend can phrase each failure
+    /// for the user rather than echoing raw backend text.
+    pub kind: String,
     pub message: String,
+}
+
+impl FailedItem {
+    pub fn new(path: &Path, err: &FsError) -> Self {
+        Self {
+            path: path.display().to_string(),
+            kind: err.kind_name().to_string(),
+            message: err.to_string(),
+        }
+    }
 }
 
 /// Outcome of a transfer. One item failing no longer abandons the rest, so the

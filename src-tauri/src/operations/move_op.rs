@@ -100,10 +100,7 @@ pub fn move_paths_controlled(
         match move_one(source, destination_dir, policy) {
             Ok(Some(())) => report.completed.push(source.display().to_string()),
             Ok(None) => report.skipped.push(source.display().to_string()),
-            Err(e) => report.failed.push(FailedItem {
-                path: source.display().to_string(),
-                message: e.to_string(),
-            }),
+            Err(e) => report.failed.push(FailedItem::new(source, &e)),
         }
     }
 
