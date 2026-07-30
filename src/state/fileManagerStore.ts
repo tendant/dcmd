@@ -19,6 +19,8 @@ export interface PaneState {
   error: string | null;
   renameMode: RenameMode;
   isEditingPath: boolean;
+  /** Type-to-filter text; empty means no filter. Resolve rows via visibleEntries(). */
+  filter: string;
   /**
    * Directory sizes computed on demand (Space), keyed by path. Directory sizes
    * are never computed during listing — see `directory_size` in the backend.
@@ -37,6 +39,11 @@ export interface FileManagerState {
   refresh: (pane: PaneId) => Promise<void>;
   setCursor: (pane: PaneId, index: number) => void;
   toggleSelection: (pane: PaneId, path: string) => void;
+  setFilter: (pane: PaneId, filter: string) => void;
+  clearFilter: (pane: PaneId) => void;
+  setPaneError: (pane: PaneId, message: string | null) => void;
+  /** How many entries an operation would act on (selection, else cursor row). */
+  targetCount: (pane: PaneId) => number;
   openEntry: (pane: PaneId, path: string) => Promise<void>;
   computeDirSize: (pane: PaneId, path: string) => Promise<void>;
   cancelDirSize: (pane: PaneId, path: string) => void;
@@ -57,6 +64,42 @@ export interface FileManagerState {
   trashSelection: (pane: PaneId) => Promise<void>;
 }
 
+/**
+ * The entries actually shown in a pane, after its type-to-filter text.
+ *
+ * Every cursor index, selection range and operation target must resolve through
+ * this, never through `entries` directly: while a filter is active the two
+ * differ, and reading the unfiltered array would make an operation act on a row
+ * the user cannot see.
+ */
+export const visibleEntries = (paneState: PaneState): FileEntry[] => {
+  const needle = paneState.filter.trim().toLowerCase();
+  if (!needle) return paneState.entries;
+  return paneState.entries.filter((e) => e.name.toLowerCase().includes(needle));
+};
+
+/**
+ * The entry under the cursor, or null when the cursor is on the synthetic ".."
+ * row (display index 0), which is never a real entry. Centralised so the
+ * display-index-to-entry-index offset exists in exactly one place.
+ */
+export const entryAtCursor = (paneState: PaneState): FileEntry | null => {
+  if (paneState.cursor <= 0) return null;
+  return visibleEntries(paneState)[paneState.cursor - 1] ?? null;
+};
+
+/**
+ * Paths an operation should act on: the explicit selection when there is one,
+ * otherwise the row under the cursor. Acting on the cursor row is what every
+ * dual-pane file manager does, and without it operations silently do nothing
+ * until the user happens to have pressed Space.
+ */
+const targetPaths = (paneState: PaneState): string[] => {
+  if (paneState.selected.size > 0) return Array.from(paneState.selected);
+  const entry = entryAtCursor(paneState);
+  return entry ? [entry.path] : [];
+};
+
 const defaultPaneState = (path: string): PaneState => ({
   path,
   entries: [],
@@ -67,6 +110,7 @@ const defaultPaneState = (path: string): PaneState => ({
   error: null,
   renameMode: null,
   isEditingPath: false,
+  filter: "",
   dirSizes: {},
 });
 
@@ -95,6 +139,9 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
           cursor: 0,
           selected: new Set(),
           renameMode: null,
+          // A filter belongs to the directory it was typed in; carrying it into
+          // a new one would hide rows for no visible reason.
+          filter: "",
           dirSizes: {},
         },
       },
@@ -158,17 +205,70 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   },
 
   refresh: async (pane) => {
-    const state = get();
-    const path = state.panes[pane].path;
-    await state.navigate(pane, path);
+    const before = get().panes[pane];
+    const path = before.path;
+    if (!path) return;
+
+    // Re-listing must not behave like navigating: a refresh keeps the user where
+    // they were. Remember what the cursor was on so it can be restored by path
+    // rather than by index, since the index moves when entries appear or vanish.
+    const anchorPath = entryAtCursor(before)?.path ?? null;
+    const previousCursor = before.cursor;
+    const previousSelection = before.selected;
+
+    set((state) => ({
+      panes: {
+        ...state.panes,
+        [pane]: { ...state.panes[pane], loading: true, error: null },
+      },
+    }));
+
+    try {
+      const entries = await commands.listDirectory(path);
+
+      set((state) => {
+        const paneState = state.panes[pane];
+        const present = new Set(entries.map((e) => e.path));
+
+        // Drop selections and cached sizes for entries that are gone, keep the rest.
+        const selected = new Set(
+          Array.from(previousSelection).filter((p) => present.has(p)),
+        );
+        const dirSizes = Object.fromEntries(
+          Object.entries(paneState.dirSizes).filter(([p]) => present.has(p)),
+        );
+
+        const next = { ...paneState, entries, selected, dirSizes, loading: false, error: null };
+
+        // Prefer landing on the same entry; if it is gone, hold the same slot.
+        const visible = visibleEntries(next);
+        let cursor = Math.min(previousCursor, visible.length);
+        if (anchorPath) {
+          const i = visible.findIndex((e) => e.path === anchorPath);
+          if (i >= 0) cursor = i + 1;
+        }
+
+        return { panes: { ...state.panes, [pane]: { ...next, cursor } } };
+      });
+    } catch (err) {
+      const message =
+        err && typeof err === "object" && "message" in err
+          ? String((err as any).message)
+          : String(err);
+      set((state) => ({
+        panes: {
+          ...state.panes,
+          [pane]: { ...state.panes[pane], loading: false, error: message },
+        },
+      }));
+    }
   },
 
   setCursor: (pane, index) => {
     set((state) => {
       const paneState = state.panes[pane];
-      // Max cursor is entries.length because of synthetic ".." at index 0
-      // So indices go from 0 (parent) to entries.length (last real entry)
-      const clamped = Math.max(0, Math.min(index, paneState.entries.length));
+      // Display indices run 0 (the ".." row) to visible.length (last real row).
+      const clamped = Math.max(0, Math.min(index, visibleEntries(paneState).length));
       return {
         panes: {
           ...state.panes,
@@ -180,6 +280,38 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       };
     });
   },
+
+  setFilter: (pane, filter) => {
+    set((state) => {
+      const paneState = state.panes[pane];
+      const next = { ...paneState, filter };
+      // Changing the filter changes which rows exist, so the cursor must be
+      // re-clamped against the new visible list. Landing on the first match is
+      // more useful than keeping a stale index.
+      const count = visibleEntries(next).length;
+      return {
+        panes: {
+          ...state.panes,
+          [pane]: { ...next, cursor: count > 0 ? Math.min(Math.max(paneState.cursor, 1), count) : 0 },
+        },
+      };
+    });
+  },
+
+  clearFilter: (pane) => {
+    get().setFilter(pane, "");
+  },
+
+  setPaneError: (pane, message) => {
+    set((state) => ({
+      panes: {
+        ...state.panes,
+        [pane]: { ...state.panes[pane], error: message },
+      },
+    }));
+  },
+
+  targetCount: (pane) => targetPaths(get().panes[pane]).length,
 
   openEntry: async (pane, path) => {
     try {
@@ -295,8 +427,9 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       const newSelected = new Set<string>();
 
       // Convert display indices to entry indices (subtract 1 for the parent entry)
+      const visible = visibleEntries(paneState);
       for (let i = start; i <= end; i++) {
-        const entry = paneState.entries[i - 1];
+        const entry = visible[i - 1];
         if (entry) {
           newSelected.add(entry.path);
         }
@@ -422,10 +555,13 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     const active = state.activePane;
     const other: PaneId = active === "left" ? "right" : "left";
 
-    const sources = Array.from(state.panes[active].selected);
+    const sources = targetPaths(state.panes[active]);
     const destination = state.panes[other].path;
 
-    if (sources.length === 0 || !destination) return;
+    if (sources.length === 0 || !destination) {
+      state.setPaneError(active, "Nothing to copy");
+      return;
+    }
 
     try {
       await commands.copyEntries(sources, destination);
@@ -453,10 +589,13 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     const active = state.activePane;
     const other: PaneId = active === "left" ? "right" : "left";
 
-    const sources = Array.from(state.panes[active].selected);
+    const sources = targetPaths(state.panes[active]);
     const destination = state.panes[other].path;
 
-    if (sources.length === 0 || !destination) return;
+    if (sources.length === 0 || !destination) {
+      state.setPaneError(active, "Nothing to move");
+      return;
+    }
 
     try {
       await commands.moveEntries(sources, destination);
@@ -481,9 +620,12 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
 
   trashSelection: async (pane) => {
     const state = get();
-    const paths = Array.from(state.panes[pane].selected);
+    const paths = targetPaths(state.panes[pane]);
 
-    if (paths.length === 0) return;
+    if (paths.length === 0) {
+      state.setPaneError(pane, "Nothing to delete");
+      return;
+    }
 
     try {
       await commands.trashEntries(paths);

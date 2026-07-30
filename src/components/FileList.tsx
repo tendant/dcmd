@@ -12,6 +12,7 @@ interface FileListProps {
   cursor: number;
   paneId: PaneId;
   renameMode: any;
+  filter: string;
 }
 
 // Synthetic parent directory entry
@@ -31,6 +32,7 @@ export function FileList({
   cursor,
   paneId,
   renameMode,
+  filter,
 }: FileListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -55,7 +57,7 @@ export function FileList({
   if (entries.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">
-        No files
+        {filter ? `No matches for "${filter}"` : "No files"}
       </div>
     );
   }
