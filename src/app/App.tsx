@@ -11,6 +11,19 @@ export function App() {
   useGlobalKeyboard();
 
   useEffect(() => {
+    // The webview shows its own menu (Reload, Inspect) otherwise, on top of
+    // ours. Tauri has no configuration flag for this. Inputs keep theirs, since
+    // the native menu is genuinely useful for cut/copy/paste while renaming.
+    const suppress = (e: MouseEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("input, textarea")) return;
+      e.preventDefault();
+    };
+    window.addEventListener("contextmenu", suppress);
+    return () => window.removeEventListener("contextmenu", suppress);
+  }, []);
+
+  useEffect(() => {
     if (!commands.isTauriWebview()) {
       // A browser tab pointed at the dev server reaches this. Vite forwards its
       // console to the terminal, so say plainly where the output is coming from.

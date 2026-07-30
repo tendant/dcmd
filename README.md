@@ -53,6 +53,9 @@ media control, so they only reach the app with `Fn` held, or with *Use F1, F2,
 etc. keys as standard function keys* enabled in System Settings. The `⌘`
 bindings exist for that reason and do the same thing.
 
+**Right-click** a row or empty space for a menu of what applies, each item
+labelled with its keyboard shortcut.
+
 ## Behaviour worth knowing
 
 **Folder sizes are not computed while listing.** A directory shows its item

@@ -34,6 +34,9 @@ export function FileRow({
   const navigate = useFileManagerStore((s) => s.navigate);
   const goToParent = useFileManagerStore((s) => s.goToParent);
   const openEntry = useFileManagerStore((s) => s.openEntry);
+  const openContextMenu = useFileManagerStore((s) => s.openContextMenu);
+  const clearSelection = useFileManagerStore((s) => s.clearSelection);
+  const setActivePane = useFileManagerStore((s) => s.setActivePane);
 
   if (isRenaming) {
     return (
@@ -72,6 +75,20 @@ export function FileRow({
       // Single click positions cursor
       setCursor(paneId, index);
     }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isParentDirectory) return;
+    // Right-clicking a row that is not part of the selection acts on that row,
+    // so the menu can never describe acting on something the click did not hit.
+    if (!paneState.selected.has(entry.path)) {
+      clearSelection(paneId);
+      setCursor(paneId, index);
+    }
+    setActivePane(paneId);
+    openContextMenu({ x: e.clientX, y: e.clientY, pane: paneId, path: entry.path });
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
@@ -117,6 +134,7 @@ export function FileRow({
     <div
       onClick={handleRowClick}
       onDoubleClick={handleDoubleClick}
+      onContextMenu={handleContextMenu}
       className={`flex items-center gap-2 px-2 py-1 text-sm font-mono border-l-4 cursor-pointer select-none transition-colors ${
         isCursor
           ? "border-l-blue-600 bg-blue-200 dark:bg-blue-800 font-semibold text-gray-900 dark:text-gray-100"

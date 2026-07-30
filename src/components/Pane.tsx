@@ -13,9 +13,17 @@ export function Pane({ paneId }: PaneProps) {
   const activePane = useFileManagerStore((s) => s.activePane);
   const setActivePane = useFileManagerStore((s) => s.setActivePane);
   const clearFilter = useFileManagerStore((s) => s.clearFilter);
+  const openContextMenu = useFileManagerStore((s) => s.openContextMenu);
 
   const isActive = activePane === paneId;
   const visible = visibleEntries(paneState);
+
+  const handlePaneContextMenu = (e: React.MouseEvent) => {
+    // Rows stop propagation, so reaching here means empty space.
+    e.preventDefault();
+    setActivePane(paneId);
+    openContextMenu({ x: e.clientX, y: e.clientY, pane: paneId, path: null });
+  };
 
   const handlePaneClick = () => {
     if (!isActive) {
@@ -26,6 +34,7 @@ export function Pane({ paneId }: PaneProps) {
   return (
     <div
       onClick={handlePaneClick}
+      onContextMenu={handlePaneContextMenu}
       className={`flex flex-col h-full border ${
         isActive ? "border-blue-500" : "border-gray-300 dark:border-gray-700"
       }`}

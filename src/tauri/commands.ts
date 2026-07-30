@@ -67,6 +67,9 @@ export const defaultStartDir = (): Promise<string> =>
 export const openEntry = (path: string): Promise<void> =>
   invoke<void>("open_entry", { path });
 
+export const revealEntry = (path: string): Promise<void> =>
+  invoke<void>("reveal_entry", { path });
+
 export const directorySize = (path: string): Promise<number> =>
   invoke<number>("directory_size", { path });
 

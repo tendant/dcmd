@@ -84,7 +84,7 @@ No networking. No plugins. No settings.
 
 -   Dual panes
 -   Keyboard navigation
--   Mouse support
+-   Mouse support, including a right-click menu
 -   Bookmarks
 -   History
 -   Path bar
@@ -165,6 +165,30 @@ Commands:
 -   Open Terminal
 
 ------------------------------------------------------------------------
+
+# Context menu
+
+Right-clicking a row offers open, copy and move to the other pane, rename, move
+to Trash, calculate size for folders, reveal in the file browser and copy path.
+Right-clicking empty space offers new folder, refresh, a sort submenu and a
+hidden-files toggle.
+
+Every item shows its keyboard shortcut. The menu is as much a way of learning
+the keyboard interface as of avoiding it: most of what this app does is behind a
+key, and a menu listing no shortcuts would teach people to keep reaching for the
+mouse.
+
+-   Right-clicking a row that is not in the selection selects it first, so the
+    menu can never describe acting on something the click did not hit
+-   With several items selected the labels name the count — a menu reading
+    "Copy a.txt" while about to copy twelve files is lying
+-   Rename is disabled for a multi-selection rather than silently acting on one
+-   Built in HTML rather than with Tauri's `Menu::popup`. The native menu looks
+    more native and is accessible for free, but cannot be covered by the
+    component tests, and showing a shortcut beside each item is awkward in it.
+-   The webview's own menu is suppressed by preventing the `contextmenu` event;
+    Tauri has no configuration flag for this. Inputs keep theirs, since the
+    native menu is genuinely useful for paste while renaming.
 
 # Settings
 

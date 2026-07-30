@@ -275,6 +275,25 @@ pub async fn open_entry(path: String) -> Result<(), FsError> {
     .map_err(|e| FsError::Io(format!("task join error: {e}")))?
 }
 
+/// Shows the entry in the OS file browser.
+///
+/// Goes through the plugin's Rust API for the same reason `open_entry` does: the
+/// JS command is gated by a capability path scope meant to restrain web content,
+/// which is the wrong model for a file manager acting on a row the user picked.
+#[tauri::command]
+pub async fn reveal_entry(path: String) -> Result<(), FsError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = PathBuf::from(&path);
+        if !p.exists() {
+            return Err(FsError::NotFound(path));
+        }
+        tauri_plugin_opener::reveal_item_in_dir(&p)
+            .map_err(|e| FsError::Io(format!("could not reveal {path}: {e}")))
+    })
+    .await
+    .map_err(|e| FsError::Io(format!("task join error: {e}")))?
+}
+
 /// Cancellation flags for in-flight directory size walks, keyed by path.
 #[derive(Default)]
 pub struct SizeCalculations(Mutex<HashMap<String, Arc<AtomicBool>>>);

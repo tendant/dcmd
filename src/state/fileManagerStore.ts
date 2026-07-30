@@ -97,6 +97,14 @@ export interface ActiveTransfer {
 export const MIN_SPLIT = 0.15;
 export const MAX_SPLIT = 1 - MIN_SPLIT;
 
+export interface ContextMenuState {
+  x: number;
+  y: number;
+  pane: PaneId;
+  /** null when the click landed on empty space rather than a row. */
+  path: string | null;
+}
+
 export interface FileManagerState {
   panes: Record<PaneId, PaneState>;
   activePane: PaneId;
@@ -107,6 +115,9 @@ export interface FileManagerState {
   splitRatio: number;
   /** Which pane is hidden entirely, if either. */
   collapsed: PaneId | null;
+  /** Open context menu, if any. Holds a path rather than an entry so it cannot
+   * go stale if the listing refreshes underneath it. */
+  contextMenu: ContextMenuState | null;
   dialog: DialogState | null;
   transfer: ActiveTransfer | null;
 
@@ -124,6 +135,9 @@ export interface FileManagerState {
   resetSplit: () => void;
   /** Hides a pane, or restores it if it is the one already hidden. */
   toggleCollapse: (pane: PaneId) => void;
+  openContextMenu: (menu: ContextMenuState) => void;
+  closeContextMenu: () => void;
+  revealEntry: (pane: PaneId, path: string) => Promise<void>;
   /** Applies persisted settings over the defaults at startup. */
   applySettings: (settings: commands.Settings) => void;
   /** Re-selecting the active key reverses it, which is what column headers do. */
@@ -303,6 +317,18 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   activePane: "left",
   splitRatio: 0.5,
   collapsed: null,
+  contextMenu: null,
+
+  openContextMenu: (menu) => set({ contextMenu: menu }),
+  closeContextMenu: () => set({ contextMenu: null }),
+
+  revealEntry: async (pane, path) => {
+    try {
+      await commands.revealEntry(path);
+    } catch (err) {
+      get().reportError(pane, err, "open");
+    }
+  },
 
   setActivePane: (pane) => set({ activePane: pane }),
 
