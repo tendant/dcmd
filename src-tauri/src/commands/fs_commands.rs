@@ -1,6 +1,7 @@
 use crate::error::FsError;
 use crate::fs::{self, FileEntry};
 use crate::operations;
+use crate::operations::transfer::{ConflictPolicy, TransferReport};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,6 +37,52 @@ pub async fn default_start_dir() -> Result<String, FsError> {
             Ok(path) => Ok(path.to_string_lossy().to_string()),
             Err(_) => Ok("/".to_string()),
         }
+    })
+    .await
+    .map_err(|e| FsError::Io(format!("task join error: {e}")))?
+}
+
+/// Names that already exist at the destination, so the user can be asked what to
+/// do before anything is written.
+#[tauri::command]
+pub async fn check_conflicts(
+    sources: Vec<String>,
+    destination_dir: String,
+) -> Result<Vec<String>, FsError> {
+    let srcs: Vec<PathBuf> = sources.into_iter().map(PathBuf::from).collect();
+    let dest = PathBuf::from(destination_dir);
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(crate::operations::transfer::find_conflicts(&srcs, &dest))
+    })
+    .await
+    .map_err(|e| FsError::Io(format!("task join error: {e}")))?
+}
+
+#[tauri::command]
+pub async fn copy_entries_with(
+    sources: Vec<String>,
+    destination_dir: String,
+    policy: ConflictPolicy,
+) -> Result<TransferReport, FsError> {
+    let srcs: Vec<PathBuf> = sources.into_iter().map(PathBuf::from).collect();
+    let dest = PathBuf::from(destination_dir);
+    tauri::async_runtime::spawn_blocking(move || {
+        operations::copy::copy_paths_with(&srcs, &dest, policy)
+    })
+    .await
+    .map_err(|e| FsError::Io(format!("task join error: {e}")))?
+}
+
+#[tauri::command]
+pub async fn move_entries_with(
+    sources: Vec<String>,
+    destination_dir: String,
+    policy: ConflictPolicy,
+) -> Result<TransferReport, FsError> {
+    let srcs: Vec<PathBuf> = sources.into_iter().map(PathBuf::from).collect();
+    let dest = PathBuf::from(destination_dir);
+    tauri::async_runtime::spawn_blocking(move || {
+        operations::move_op::move_paths_with(&srcs, &dest, policy)
     })
     .await
     .map_err(|e| FsError::Io(format!("task join error: {e}")))?

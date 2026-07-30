@@ -17,6 +17,9 @@ pub fn run() {
             commands::mkdir,
             commands::rename,
             commands::copy_entries,
+            commands::copy_entries_with,
+            commands::move_entries_with,
+            commands::check_conflicts,
             commands::move_entries,
             commands::trash_entries,
         ])

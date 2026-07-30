@@ -4,28 +4,22 @@ import { entryAtCursor, useFileManagerStore } from "../state/fileManagerStore";
 type Store = ReturnType<typeof useFileManagerStore.getState>;
 
 /**
- * Trash whatever the active pane would act on, after confirming. Deletion is the
- * one operation here that the user cannot undo from inside the app, so it always
- * asks first and names the count it is about to act on.
+ * Trash whatever the active pane would act on, after confirming. Deletion always
+ * asks first, and the confirmation names the files rather than showing the bare
+ * count window.confirm was limited to.
  */
 function confirmAndTrash(store: Store) {
-  const pane = store.activePane;
-  const count = store.targetCount(pane);
-
-  if (count === 0) {
-    store.setPaneError(pane, "Nothing to delete");
-    return;
-  }
-
-  if (window.confirm(`Move ${count} item${count === 1 ? "" : "s"} to Trash?`)) {
-    store.trashSelection(pane);
-  }
+  store.requestTrash(store.activePane);
 }
 
 export function useGlobalKeyboard() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const store = useFileManagerStore.getState();
+
+      // A modal owns the keyboard while it is open, or typing would land in the
+      // filter behind it. The dialog handles its own Escape.
+      if (store.dialog) return;
 
       // Ctrl+L to edit path (works even in input fields for this specific case)
       if ((e.ctrlKey || e.metaKey) && e.key === "l") {
@@ -64,12 +58,12 @@ export function useGlobalKeyboard() {
         }
         if (e.shiftKey && key === "c") {
           e.preventDefault();
-          store.copySelection();
+          store.requestTransfer("copy");
           return;
         }
         if (e.shiftKey && key === "m") {
           e.preventDefault();
-          store.moveSelection();
+          store.requestTransfer("move");
           return;
         }
         if (e.shiftKey && key === "r") {
@@ -201,13 +195,13 @@ export function useGlobalKeyboard() {
 
         case "F5": {
           e.preventDefault();
-          store.copySelection();
+          store.requestTransfer("copy");
           break;
         }
 
         case "F6": {
           e.preventDefault();
-          store.moveSelection();
+          store.requestTransfer("move");
           break;
         }
 

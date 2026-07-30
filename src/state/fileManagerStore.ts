@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { FileEntry } from "../types/fileEntry";
 import * as commands from "../tauri/commands";
+import type { ConflictPolicy } from "../tauri/commands";
 
 export type PaneId = "left" | "right";
 
@@ -29,9 +30,31 @@ export interface PaneState {
   dirSizes: Record<string, number | "pending" | "error">;
 }
 
+/**
+ * A modal question awaiting the user. Held at the top level rather than per-pane
+ * because it blocks interaction with both, and kept in the store rather than using
+ * window.confirm so it can name the files involved and be styled.
+ */
+export type DialogState =
+  | {
+      kind: "conflict";
+      op: "copy" | "move";
+      pane: PaneId;
+      sources: string[];
+      destination: string;
+      /** Names that already exist at the destination. */
+      names: string[];
+    }
+  | {
+      kind: "confirmTrash";
+      pane: PaneId;
+      paths: string[];
+    };
+
 export interface FileManagerState {
   panes: Record<PaneId, PaneState>;
   activePane: PaneId;
+  dialog: DialogState | null;
 
   setActivePane: (pane: PaneId) => void;
   navigate: (pane: PaneId, path: string) => Promise<void>;
@@ -62,7 +85,27 @@ export interface FileManagerState {
   copySelection: () => Promise<void>;
   moveSelection: () => Promise<void>;
   trashSelection: (pane: PaneId) => Promise<void>;
+
+  /** Begins a transfer, asking about name clashes first if there are any. */
+  requestTransfer: (op: "copy" | "move") => Promise<void>;
+  /** Runs a transfer with a decided conflict policy. */
+  performTransfer: (
+    op: "copy" | "move",
+    pane: PaneId,
+    sources: string[],
+    destination: string,
+    policy: ConflictPolicy,
+  ) => Promise<void>;
+  /** Opens the delete confirmation, which names what it will remove. */
+  requestTrash: (pane: PaneId) => void;
+  dismissDialog: () => void;
 }
+
+/** Pulls a readable message out of whatever the Tauri layer threw. */
+const errorMessage = (err: unknown): string =>
+  err && typeof err === "object" && "message" in err
+    ? String((err as { message: unknown }).message)
+    : String(err);
 
 /**
  * The entries actually shown in a pane, after its type-to-filter text.
@@ -281,6 +324,77 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     });
   },
 
+  dialog: null,
+
+  dismissDialog: () => set({ dialog: null }),
+
+  requestTransfer: async (op) => {
+    const state = get();
+    const active = state.activePane;
+    const other: PaneId = active === "left" ? "right" : "left";
+    const sources = targetPaths(state.panes[active]);
+    const destination = state.panes[other].path;
+
+    if (sources.length === 0 || !destination) {
+      state.setPaneError(active, `Nothing to ${op}`);
+      return;
+    }
+
+    try {
+      const names = await commands.checkConflicts(sources, destination);
+      if (names.length > 0) {
+        // Ask once up front rather than per item: deciding mid-transfer would
+        // mean blocking a worker thread waiting on the UI.
+        set({ dialog: { kind: "conflict", op, pane: active, sources, destination, names } });
+        return;
+      }
+      await state.performTransfer(op, active, sources, destination, "fail");
+    } catch (err) {
+      state.setPaneError(active, errorMessage(err));
+    }
+  },
+
+  performTransfer: async (op, pane, sources, destination, policy) => {
+    const state = get();
+    set({ dialog: null });
+
+    try {
+      const report =
+        op === "copy"
+          ? await commands.copyEntriesWith(sources, destination, policy)
+          : await commands.moveEntriesWith(sources, destination, policy);
+
+      const other: PaneId = pane === "left" ? "right" : "left";
+      await state.refresh(pane);
+      await state.refresh(other);
+      state.clearSelection(pane);
+
+      // A partial result must be stated, not hidden behind an apparent success.
+      const parts: string[] = [];
+      if (report.failed.length > 0) {
+        parts.push(
+          `${report.failed.length} failed (${report.failed[0].message}${
+            report.failed.length > 1 ? ", …" : ""
+          })`,
+        );
+      }
+      if (report.skipped.length > 0) parts.push(`${report.skipped.length} skipped`);
+      state.setPaneError(pane, parts.length > 0 ? `${op}: ${parts.join(", ")}` : null);
+    } catch (err) {
+      state.setPaneError(pane, errorMessage(err));
+    }
+  },
+
+  requestTrash: (pane) => {
+    const state = get();
+    const paths = targetPaths(state.panes[pane]);
+    if (paths.length === 0) {
+      state.setPaneError(pane, "Nothing to delete");
+      return;
+    }
+    set({ dialog: { kind: "confirmTrash", pane, paths } });
+  },
+
   setFilter: (pane, filter) => {
     set((state) => {
       const paneState = state.panes[pane];
@@ -490,9 +604,15 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     const parentDir = state.panes[pane].path;
 
     try {
-      await commands.mkdir(parentDir, name);
+      const created = await commands.mkdir(parentDir, name);
       state.cancelInlineEdit(pane);
       await state.refresh(pane);
+
+      // Put the cursor on the new folder: in a long listing it would otherwise
+      // sort somewhere off-screen and be hard to find.
+      const after = get().panes[pane];
+      const i = visibleEntries(after).findIndex((e) => e.path === created.path);
+      if (i >= 0) get().setCursor(pane, i + 1);
     } catch (err) {
       let message = "Failed to create folder";
       if (err && typeof err === "object" && "message" in err) {
@@ -626,6 +746,8 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       state.setPaneError(pane, "Nothing to delete");
       return;
     }
+
+    set({ dialog: null });
 
     try {
       await commands.trashEntries(paths);

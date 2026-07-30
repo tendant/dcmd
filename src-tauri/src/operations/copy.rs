@@ -1,7 +1,10 @@
 use crate::error::FsError;
+use crate::operations::transfer::{resolve_destination, ConflictPolicy, FailedItem, TransferReport};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Fails on the first problem, preserving its error kind so callers can branch on
+/// it. Used where an all-or-nothing result is wanted instead of a report.
 pub fn copy_paths(sources: &[PathBuf], destination_dir: &Path) -> Result<(), FsError> {
     if !destination_dir.is_dir() {
         return Err(FsError::NotADirectory(format!(
@@ -9,37 +12,74 @@ pub fn copy_paths(sources: &[PathBuf], destination_dir: &Path) -> Result<(), FsE
             destination_dir.display()
         )));
     }
+    for source in sources {
+        copy_one(source, destination_dir, ConflictPolicy::Fail)?;
+    }
+    Ok(())
+}
+
+/// Copies each source into `destination_dir`, applying `policy` to name clashes.
+///
+/// One item failing no longer abandons the remainder: the caller gets a report of
+/// what completed, what was skipped and what failed, so a partial transfer can be
+/// described accurately instead of silently leaving half the work done.
+pub fn copy_paths_with(
+    sources: &[PathBuf],
+    destination_dir: &Path,
+    policy: ConflictPolicy,
+) -> Result<TransferReport, FsError> {
+    if !destination_dir.is_dir() {
+        return Err(FsError::NotADirectory(format!(
+            "destination is not a directory: {}",
+            destination_dir.display()
+        )));
+    }
+
+    let mut report = TransferReport::default();
 
     for source in sources {
-        if !source.exists() {
-            return Err(FsError::NotFound(format!(
-                "source does not exist: {}",
-                source.display()
-            )));
-        }
-
-        let file_name = source.file_name().ok_or_else(|| {
-            FsError::Io("cannot get file name".to_string())
-        })?;
-
-        let dest = destination_dir.join(&file_name);
-
-        if dest.exists() {
-            return Err(FsError::AlreadyExists(format!(
-                "destination already exists: {}",
-                dest.display()
-            )));
-        }
-
-        if source.is_dir() {
-            check_not_into_itself(source, destination_dir)?;
-            copy_dir_recursive(source, &dest, &mut Vec::new())?;
-        } else {
-            fs::copy(source, &dest)?;
+        match copy_one(source, destination_dir, policy) {
+            Ok(Some(())) => report.completed.push(source.display().to_string()),
+            Ok(None) => report.skipped.push(source.display().to_string()),
+            Err(e) => report.failed.push(FailedItem {
+                path: source.display().to_string(),
+                message: e.to_string(),
+            }),
         }
     }
 
-    Ok(())
+    Ok(report)
+}
+
+/// `Ok(None)` means the item was skipped by policy.
+fn copy_one(
+    source: &Path,
+    destination_dir: &Path,
+    policy: ConflictPolicy,
+) -> Result<Option<()>, FsError> {
+    if !source.exists() {
+        return Err(FsError::NotFound(format!(
+            "source does not exist: {}",
+            source.display()
+        )));
+    }
+
+    let file_name = source
+        .file_name()
+        .ok_or_else(|| FsError::Io("cannot get file name".to_string()))?;
+
+    let dest = match resolve_destination(&destination_dir.join(file_name), policy)? {
+        Some(d) => d,
+        None => return Ok(None),
+    };
+
+    if source.is_dir() {
+        check_not_into_itself(source, destination_dir)?;
+        copy_dir_recursive(source, &dest, &mut Vec::new())?;
+    } else {
+        fs::copy(source, &dest)?;
+    }
+    Ok(Some(()))
 }
 
 /// Rejects copying a directory into itself or anywhere beneath it, which would

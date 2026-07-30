@@ -11,6 +11,9 @@ vi.mock("../tauri/commands", () => ({
   copyEntries: vi.fn(async () => undefined),
   moveEntries: vi.fn(async () => undefined),
   trashEntries: vi.fn(async () => undefined),
+  checkConflicts: vi.fn(async () => []),
+  copyEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
+  moveEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
 }));
 
 import * as commands from "../tauri/commands";
@@ -57,6 +60,7 @@ function seedPane(cursor: number, selected: string[] = []) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useFileManagerStore.setState({ dialog: null });
 });
 
 describe("operations with no explicit selection", () => {
@@ -211,5 +215,85 @@ describe("refresh", () => {
     const s = useFileManagerStore.getState().panes.left;
     expect(s.loading).toBe(false);
     expect(s.error).toBe("boom");
+  });
+});
+
+describe("conflict handling", () => {
+  it("asks before writing when names already exist", async () => {
+    seedPane(1);
+    (commands.checkConflicts as any).mockResolvedValueOnce(["a.txt"]);
+    await useFileManagerStore.getState().requestTransfer("copy");
+
+    const d = useFileManagerStore.getState().dialog;
+    expect(d).toMatchObject({ kind: "conflict", op: "copy", names: ["a.txt"] });
+    // Crucially, nothing was written while the question is outstanding.
+    expect(commands.copyEntriesWith).not.toHaveBeenCalled();
+  });
+
+  it("transfers straight through when there is no clash", async () => {
+    seedPane(1);
+    (commands.checkConflicts as any).mockResolvedValueOnce([]);
+    await useFileManagerStore.getState().requestTransfer("copy");
+
+    expect(useFileManagerStore.getState().dialog).toBeNull();
+    expect(commands.copyEntriesWith).toHaveBeenCalledWith(["/left/a.txt"], "/right", "fail");
+  });
+
+  it("passes the chosen policy through and closes the dialog", async () => {
+    seedPane(1);
+    await useFileManagerStore
+      .getState()
+      .performTransfer("move", "left", ["/left/a.txt"], "/right", "keepBoth");
+
+    expect(commands.moveEntriesWith).toHaveBeenCalledWith(["/left/a.txt"], "/right", "keepBoth");
+    expect(useFileManagerStore.getState().dialog).toBeNull();
+  });
+
+  it("reports a partial result instead of appearing to succeed", async () => {
+    seedPane(1);
+    (commands.copyEntriesWith as any).mockResolvedValueOnce({
+      completed: ["/left/a.txt"],
+      skipped: ["/left/b.txt"],
+      failed: [{ path: "/left/c.txt", message: "permission denied" }],
+    });
+    await useFileManagerStore
+      .getState()
+      .performTransfer("copy", "left", ["/left/a.txt"], "/right", "fail");
+
+    const err = useFileManagerStore.getState().panes.left.error ?? "";
+    expect(err).toContain("1 failed");
+    expect(err).toContain("permission denied");
+    expect(err).toContain("1 skipped");
+  });
+
+  it("stays quiet when everything succeeded", async () => {
+    seedPane(1);
+    await useFileManagerStore
+      .getState()
+      .performTransfer("copy", "left", ["/left/a.txt"], "/right", "fail");
+    expect(useFileManagerStore.getState().panes.left.error).toBeNull();
+  });
+});
+
+describe("delete confirmation", () => {
+  it("names what it will delete rather than only counting", () => {
+    seedPane(1, ["/left/a.txt", "/left/b.txt"]);
+    useFileManagerStore.getState().requestTrash("left");
+    const d = useFileManagerStore.getState().dialog;
+    expect(d).toMatchObject({ kind: "confirmTrash" });
+    expect((d as any).paths.sort()).toEqual(["/left/a.txt", "/left/b.txt"]);
+  });
+
+  it("does not delete until confirmed", () => {
+    seedPane(1);
+    useFileManagerStore.getState().requestTrash("left");
+    expect(commands.trashEntries).not.toHaveBeenCalled();
+  });
+
+  it("opens no dialog when there is nothing to delete", () => {
+    seedPane(0);
+    useFileManagerStore.getState().requestTrash("left");
+    expect(useFileManagerStore.getState().dialog).toBeNull();
+    expect(useFileManagerStore.getState().panes.left.error).toBe("Nothing to delete");
   });
 });

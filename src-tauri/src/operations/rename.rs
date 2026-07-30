@@ -3,6 +3,9 @@ use crate::fs::{validate_name, FileEntry};
 use std::path::Path;
 
 pub fn rename_entry(path: &Path, new_name: &str) -> Result<FileEntry, FsError> {
+    // Trimmed for the same reason as mkdir: trailing spaces are accidental and
+    // produce names that are hard to tell apart.
+    let new_name = new_name.trim();
     validate_name(new_name)?;
 
     if !path.exists() {

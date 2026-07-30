@@ -3,6 +3,9 @@ use crate::fs::{validate_name, FileEntry};
 use std::path::Path;
 
 pub fn make_dir(parent_dir: &Path, name: &str) -> Result<FileEntry, FsError> {
+    // Surrounding whitespace is almost always accidental and produces a folder
+    // that is hard to distinguish from its untrimmed neighbour later.
+    let name = name.trim();
     validate_name(name)?;
 
     let new_dir_path = parent_dir.join(name);
@@ -50,5 +53,38 @@ mod tests {
 
         let result = make_dir(temp_dir.path(), "foo/bar");
         assert!(matches!(result, Err(FsError::InvalidName(_))));
+    }
+}
+
+#[cfg(test)]
+mod trim_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn trims_surrounding_whitespace() {
+        let tmp = TempDir::new().unwrap();
+        let entry = make_dir(tmp.path(), "  docs  ").unwrap();
+        assert_eq!(entry.name, "docs");
+        assert!(tmp.path().join("docs").is_dir());
+        assert!(!tmp.path().join("  docs  ").exists());
+    }
+
+    #[test]
+    fn a_whitespace_only_name_is_empty_not_a_folder_called_space() {
+        let tmp = TempDir::new().unwrap();
+        assert!(matches!(
+            make_dir(tmp.path(), "   "),
+            Err(FsError::InvalidName(_))
+        ));
+    }
+
+    #[test]
+    fn dotdot_reports_an_invalid_name_not_already_exists() {
+        let tmp = TempDir::new().unwrap();
+        assert!(matches!(
+            make_dir(tmp.path(), ".."),
+            Err(FsError::InvalidName(_))
+        ));
     }
 }

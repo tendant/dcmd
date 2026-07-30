@@ -47,3 +47,29 @@ export const moveEntries = (sources: string[], destinationDir: string): Promise<
 
 export const trashEntries = (paths: string[]): Promise<void> =>
   invoke<void>("trash_entries", { paths });
+
+export type ConflictPolicy = "fail" | "skip" | "overwrite" | "keepBoth";
+
+export interface TransferReport {
+  completed: string[];
+  skipped: string[];
+  failed: { path: string; message: string }[];
+}
+
+/** Names already present at the destination, so the user can be asked first. */
+export const checkConflicts = (sources: string[], destinationDir: string): Promise<string[]> =>
+  invoke<string[]>("check_conflicts", { sources, destinationDir });
+
+export const copyEntriesWith = (
+  sources: string[],
+  destinationDir: string,
+  policy: ConflictPolicy,
+): Promise<TransferReport> =>
+  invoke<TransferReport>("copy_entries_with", { sources, destinationDir, policy });
+
+export const moveEntriesWith = (
+  sources: string[],
+  destinationDir: string,
+  policy: ConflictPolicy,
+): Promise<TransferReport> =>
+  invoke<TransferReport>("move_entries_with", { sources, destinationDir, policy });

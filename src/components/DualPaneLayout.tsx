@@ -1,5 +1,6 @@
 import { Pane } from "./Pane";
 import { Toolbar } from "./Toolbar";
+import { Dialog } from "./Dialog";
 
 export function DualPaneLayout() {
   return (
@@ -13,6 +14,7 @@ export function DualPaneLayout() {
         </div>
       </div>
       <Toolbar />
+      <Dialog />
     </div>
   );
 }
