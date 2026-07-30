@@ -77,6 +77,14 @@ export function useGlobalKeyboard() {
           }
           return;
         }
+        // Finder uses Cmd+Shift+. for this; Linux and Windows file managers use
+        // Ctrl+H. Both are accepted. Matched on e.code because Shift+. produces
+        // ">" rather than "." on most layouts.
+        if (e.code === "Period" || (!e.shiftKey && key === "h")) {
+          e.preventDefault();
+          store.toggleHidden(pane);
+          return;
+        }
         if (key === "r") {
           // preventDefault matters here: unhandled, Cmd+R reloads the webview
           // and throws away all pane state.

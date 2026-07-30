@@ -8,7 +8,7 @@ vi.mock("../tauri/commands", () => ({
   cancelDirectorySize: vi.fn(async () => undefined),
   mkdir: vi.fn(),
   renameEntry: vi.fn(),
-  trashEntries: vi.fn(async () => undefined),
+  trashEntries: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
   checkConflicts: vi.fn(async () => []),
   copyEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
   moveEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
@@ -51,6 +51,7 @@ function seedPane(cursor: number, selected: string[] = []) {
         isEditingPath: false,
         rangeStart: null,
         loading: false,
+        showHidden: false,
       },
       right: { ...s.panes.right, path: "/right" },
     },
@@ -507,5 +508,89 @@ describe("path editing", () => {
     expect(useFileManagerStore.getState().panes.left.isEditingPath).toBe(true);
     store.cancelPathEdit("left");
     expect(useFileManagerStore.getState().panes.left.isEditingPath).toBe(false);
+  });
+});
+
+describe("hidden files", () => {
+  function withDotfiles(cursor: number) {
+    seedPane(cursor);
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: {
+        ...s.panes,
+        left: {
+          ...s.panes.left,
+          entries: [
+            { ...entry("a.txt"), hidden: false },
+            { ...entry(".env"), hidden: true },
+            { ...entry("b.txt"), hidden: false },
+          ],
+        },
+      },
+    });
+  }
+
+  it("hides dotfiles by default", () => {
+    withDotfiles(1);
+    const names = visibleEntries(useFileManagerStore.getState().panes.left).map((e) => e.name);
+    expect(names).toEqual(["a.txt", "b.txt"]);
+  });
+
+  it("shows them once toggled", () => {
+    withDotfiles(1);
+    useFileManagerStore.getState().toggleHidden("left");
+    const names = visibleEntries(useFileManagerStore.getState().panes.left).map((e) => e.name);
+    expect(names).toEqual(["a.txt", ".env", "b.txt"]);
+  });
+
+  // The hazard: with dotfiles hidden, display index 2 is b.txt, not .env. An
+  // operation resolving against the raw entries array would act on the wrong file.
+  it("resolves the cursor against what is actually shown", async () => {
+    withDotfiles(2);
+    await useFileManagerStore.getState().trashSelection("left");
+    expect(commands.trashEntries).toHaveBeenCalledWith(["/left/b.txt"]);
+  });
+
+  it("keeps the cursor in range when rows disappear", () => {
+    withDotfiles(1);
+    const store = useFileManagerStore.getState();
+    store.toggleHidden("left"); // 3 rows shown
+    useFileManagerStore.getState().setCursor("left", 3);
+    store.toggleHidden("left"); // back to 2 rows
+    expect(useFileManagerStore.getState().panes.left.cursor).toBeLessThanOrEqual(2);
+  });
+
+  it("is per pane", () => {
+    withDotfiles(1);
+    useFileManagerStore.getState().toggleHidden("left");
+    expect(useFileManagerStore.getState().panes.left.showHidden).toBe(true);
+    expect(useFileManagerStore.getState().panes.right.showHidden).toBe(false);
+  });
+});
+
+describe("trash reporting", () => {
+  it("names what could not be deleted", async () => {
+    seedPane(1);
+    (commands.trashEntries as any).mockResolvedValueOnce({
+      completed: ["/left/a.txt"],
+      skipped: [],
+      failed: [{ path: "/left/locked.txt", kind: "trash", message: "locked.txt: in use" }],
+    });
+    await useFileManagerStore.getState().trashSelection("left");
+    const d = useFileManagerStore.getState().dialog as any;
+    expect(d?.kind).toBe("transferOutcome");
+    expect(d.op).toBe("delete");
+    expect(d.failed).toHaveLength(1);
+  });
+
+  it("stays quiet when everything was deleted", async () => {
+    seedPane(1);
+    (commands.trashEntries as any).mockResolvedValueOnce({
+      completed: ["/left/a.txt"],
+      skipped: [],
+      failed: [],
+    });
+    await useFileManagerStore.getState().trashSelection("left");
+    expect(useFileManagerStore.getState().dialog).toBeNull();
   });
 });

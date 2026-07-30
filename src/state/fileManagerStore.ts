@@ -23,6 +23,9 @@ export interface PaneState {
   isEditingPath: boolean;
   /** Type-to-filter text; empty means no filter. Resolve rows via visibleEntries(). */
   filter: string;
+  /** Whether dotfiles are listed. Per pane, since the two are often used for
+   * different things — browsing a project on one side, a config dir on the other. */
+  showHidden: boolean;
   /**
    * Directory sizes computed on demand (Space), keyed by path. Directory sizes
    * are never computed during listing — see `directory_size` in the backend.
@@ -54,7 +57,7 @@ export type DialogState =
   | {
       /** Shown after a transfer that did not fully succeed, listing each item. */
       kind: "transferOutcome";
-      op: "copy" | "move";
+      op: "copy" | "move" | "delete";
       completed: number;
       skipped: string[];
       failed: commands.FailedItem[];
@@ -84,6 +87,7 @@ export interface FileManagerState {
   toggleSelection: (pane: PaneId, path: string) => void;
   setFilter: (pane: PaneId, filter: string) => void;
   clearFilter: (pane: PaneId) => void;
+  toggleHidden: (pane: PaneId) => void;
   setPaneError: (pane: PaneId, error: AppError | string | null) => void;
   reportError: (pane: PaneId, err: unknown, context?: ErrorContext) => void;
   /** How many entries an operation would act on (selection, else cursor row). */
@@ -135,8 +139,11 @@ let transferSeq = 1;
  */
 export const visibleEntries = (paneState: PaneState): FileEntry[] => {
   const needle = paneState.filter.trim().toLowerCase();
-  if (!needle) return paneState.entries;
-  return paneState.entries.filter((e) => e.name.toLowerCase().includes(needle));
+  const wanted = paneState.showHidden
+    ? paneState.entries
+    : paneState.entries.filter((e) => !e.hidden);
+  if (!needle) return wanted;
+  return wanted.filter((e) => e.name.toLowerCase().includes(needle));
 };
 
 /**
@@ -172,6 +179,7 @@ const defaultPaneState = (path: string): PaneState => ({
   renameMode: null,
   isEditingPath: false,
   filter: "",
+  showHidden: false,
   dirSizes: {},
 });
 
@@ -454,6 +462,22 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     get().setFilter(pane, "");
   },
 
+  toggleHidden: (pane) => {
+    set((state) => {
+      const paneState = state.panes[pane];
+      const next = { ...paneState, showHidden: !paneState.showHidden };
+      // The visible row count changes, so the cursor has to be re-clamped or it
+      // can point past the end of the list.
+      const count = visibleEntries(next).length;
+      return {
+        panes: {
+          ...state.panes,
+          [pane]: { ...next, cursor: Math.min(paneState.cursor, count) },
+        },
+      };
+    });
+  },
+
   setPaneError: (pane, error) => {
     const normalised: AppError | null =
       error === null
@@ -698,9 +722,23 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     set({ dialog: null });
 
     try {
-      await commands.trashEntries(paths);
+      const report = await commands.trashEntries(paths);
       await state.refresh(pane);
       state.clearSelection(pane);
+
+      // Same treatment as a transfer: name what could not be taken, rather than
+      // reporting one generic failure for the whole batch.
+      if (report.failed.length > 0) {
+        set({
+          dialog: {
+            kind: "transferOutcome",
+            op: "delete",
+            completed: report.completed.length,
+            skipped: report.skipped,
+            failed: report.failed,
+          },
+        });
+      }
     } catch (err) {
       get().reportError(pane, err, "delete");
     }

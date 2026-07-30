@@ -4,6 +4,8 @@ import { toAppError } from "../errors";
 
 const basename = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 
+const OP_TITLE = { copy: "Copy", move: "Move", delete: "Delete" } as const;
+
 /** Lists names, summarising past a handful so the dialog stays readable. */
 function NameList({ names, limit = 8 }: { names: string[]; limit?: number }) {
   const shown = names.slice(0, limit);
@@ -76,9 +78,8 @@ export function Dialog() {
         {dialog.kind === "transferOutcome" ? (
           <>
             <h2 className="text-base font-semibold">
-              {dialog.failed.length > 0
-                ? `${dialog.op === "copy" ? "Copy" : "Move"} finished with problems`
-                : `${dialog.op === "copy" ? "Copy" : "Move"} finished`}
+              {OP_TITLE[dialog.op]}
+              {dialog.failed.length > 0 ? " finished with problems" : " finished"}
             </h2>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
               {dialog.completed} succeeded

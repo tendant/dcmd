@@ -12,6 +12,7 @@ use tauri::Emitter;
 
 #[tauri::command]
 pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, FsError> {
+    crate::trace_startup("first list_directory");
     let dir = PathBuf::from(path);
     tauri::async_runtime::spawn_blocking(move || fs::read_dir_entries(&dir))
         .await
@@ -276,9 +277,9 @@ pub async fn rename(path: String, new_name: String) -> Result<FileEntry, FsError
 }
 
 #[tauri::command]
-pub async fn trash_entries(paths: Vec<String>) -> Result<(), FsError> {
+pub async fn trash_entries(paths: Vec<String>) -> Result<TransferReport, FsError> {
     let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
-    tauri::async_runtime::spawn_blocking(move || operations::trash_paths(&paths))
+    tauri::async_runtime::spawn_blocking(move || operations::trash::trash_paths_reported(&paths))
         .await
-        .map_err(|e| FsError::Io(format!("task join error: {e}")))?
+        .map_err(|e| FsError::Io(format!("task join error: {e}")))
 }

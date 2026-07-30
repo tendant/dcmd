@@ -18,6 +18,19 @@ const invoke = async <T,>(command: string, args?: any): Promise<T> => {
   return tauriInvoke<T>(command, args);
 };
 
+export interface FailedItem {
+  path: string;
+  /** FsError wire name, so each failure can be phrased for the user. */
+  kind: string;
+  message: string;
+}
+
+export interface TransferReport {
+  completed: string[];
+  skipped: string[];
+  failed: FailedItem[];
+}
+
 export const listDirectory = (path: string): Promise<FileEntry[]> =>
   invoke<FileEntry[]>("list_directory", { path });
 
@@ -39,23 +52,10 @@ export const mkdir = (parentDir: string, name: string): Promise<FileEntry> =>
 export const renameEntry = (path: string, newName: string): Promise<FileEntry> =>
   invoke<FileEntry>("rename", { path, newName });
 
-export const trashEntries = (paths: string[]): Promise<void> =>
-  invoke<void>("trash_entries", { paths });
+export const trashEntries = (paths: string[]): Promise<TransferReport> =>
+  invoke<TransferReport>("trash_entries", { paths });
 
 export type ConflictPolicy = "fail" | "skip" | "overwrite" | "keepBoth";
-
-export interface FailedItem {
-  path: string;
-  /** FsError wire name, so each failure can be phrased for the user. */
-  kind: string;
-  message: string;
-}
-
-export interface TransferReport {
-  completed: string[];
-  skipped: string[];
-  failed: FailedItem[];
-}
 
 /** Names already present at the destination, so the user can be asked first. */
 export const checkConflicts = (sources: string[], destinationDir: string): Promise<string[]> =>

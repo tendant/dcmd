@@ -7,4 +7,3 @@ pub mod trash;
 
 pub use mkdir::make_dir;
 pub use rename::rename_entry;
-pub use trash::trash_paths;

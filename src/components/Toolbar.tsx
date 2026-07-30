@@ -37,6 +37,7 @@ const GROUPS: { label: string; keys: { keys: string[]; what: string }[] }[] = [
       { keys: [`${SHIFT}↑↓`], what: "Range" },
       { keys: ["type"], what: "Filter" },
       { keys: ["Esc"], what: "Clear / cancel" },
+      { keys: [isMac ? `${MOD}${SHIFT}.` : "Ctrl+H"], what: "Hidden files" },
     ],
   },
 ];

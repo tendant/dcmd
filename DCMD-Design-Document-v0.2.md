@@ -281,6 +281,24 @@ Startup
 
 -   \<100 ms
 
+**Measured, and not met.** Release build on an M-series Mac, median of five
+runs, timed from `main()` with `DCMD_TRACE_STARTUP=1`:
+
+| Milestone | Time |
+| --- | --- |
+| Window created | ~195 ms |
+| First directory listed | ~350 ms |
+
+Roughly 195 ms goes on Tauri and WebView initialisation before any of our code
+runs, so the target cannot be met by optimising the frontend alone — it is
+already over budget by the time the window exists. The remaining ~155 ms is
+bundle parse, React mount and the first IPC round trip.
+
+Worth investigating before treating the target as wrong: the frontend requests
+its first listing twice, because React StrictMode double-invokes effects in
+development, and the initial listing waits for `default_start_dir` rather than
+starting from a path known at build time.
+
 Directory open
 
 -   \<30 ms

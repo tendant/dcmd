@@ -37,6 +37,7 @@ window `pnpm tauri dev` opens. The app says so rather than failing silently.
 | Extend selection | `Shift+↑↓`, `Shift+Click` |
 | Filter | just start typing |
 | Clear filter, cancel a transfer | `Esc` |
+| Show/hide dotfiles | `⌘⇧.` / `Ctrl+H` |
 | Copy to other pane | `F5` or `⌘⇧C` |
 | Move to other pane | `F6` or `⌘⇧M` |
 | New folder | `F7` or `⌘⇧N` |
@@ -64,8 +65,11 @@ inside. Files the destination has and the source does not are left alone.
 incoming copy beside the target and swaps it in only once complete, so a failed
 or cancelled transfer leaves the original intact.
 
-**Deleting names what it will delete**, and goes to the system Trash rather than
-unlinking.
+**Deleting names what it will delete**, goes to the system Trash rather than
+unlinking, and reports which items it could not take rather than failing the
+whole batch with one message.
+
+**Dotfiles are hidden by default**, toggled per pane.
 
 ## Development
 
@@ -78,6 +82,10 @@ cargo fmt --check
 
 CI runs all of the above, with the Rust suite across Linux, macOS and Windows —
 the filesystem behaviour is what differs between them.
+
+`DCMD_TRACE_STARTUP=1` makes a release build report startup milestones to
+stderr. Startup currently misses the design document's sub-100ms target; the
+measurements and where the time goes are recorded there.
 
 For exercising the dialogs by hand:
 
