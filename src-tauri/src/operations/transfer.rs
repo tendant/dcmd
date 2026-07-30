@@ -77,6 +77,30 @@ impl TransferControl<'_> {
     }
 }
 
+/// Rejects a transfer whose destination is the folder the item is already in.
+///
+/// This is a safety check, not a convenience one. Such a transfer resolves the
+/// destination to the source itself, and under `Overwrite` that means deleting the
+/// source before copying from it — the file is destroyed and the copy then fails
+/// with "No such file or directory". It is reachable by default, since both panes
+/// open on the same directory. Must be called before `resolve_destination`.
+pub fn check_not_same_directory(source: &Path, destination_dir: &Path) -> Result<(), FsError> {
+    let parent = match source.parent() {
+        Some(p) => p,
+        None => return Ok(()),
+    };
+    if crate::fs::paths::resolve(parent) == crate::fs::paths::resolve(destination_dir) {
+        return Err(FsError::InvalidName(format!(
+            "{} is already in that folder",
+            source
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| source.display().to_string())
+        )));
+    }
+    Ok(())
+}
+
 /// Names that already exist at the destination, so the user can be asked before
 /// anything is written.
 pub fn find_conflicts(sources: &[PathBuf], destination_dir: &Path) -> Vec<String> {

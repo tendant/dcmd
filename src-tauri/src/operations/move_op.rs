@@ -1,6 +1,7 @@
 use crate::error::FsError;
 use crate::operations::transfer::{
-    resolve_destination, ConflictPolicy, FailedItem, TransferControl, TransferReport,
+    check_not_same_directory, resolve_destination, ConflictPolicy, FailedItem, TransferControl,
+    TransferReport,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -130,6 +131,9 @@ fn move_one(
         crate::operations::copy::check_not_into_itself(source, destination_dir)?;
     }
 
+    // Before resolve_destination, which under Overwrite would delete the source.
+    check_not_same_directory(source, destination_dir)?;
+
     let dest = match resolve_destination(&destination_dir.join(file_name), policy)? {
         Some(d) => d,
         None => return Ok(None),
@@ -236,5 +240,25 @@ mod tests {
         assert!(result.is_ok());
         assert!(!src.exists());
         assert!(dst.exists());
+    }
+}
+
+#[cfg(test)]
+mod same_dir_tests {
+    use super::*;
+    use crate::operations::transfer::ConflictPolicy;
+    use tempfile::TempDir;
+
+    #[test]
+    fn moving_into_the_same_directory_is_refused_and_keeps_the_file() {
+        let tmp = TempDir::new().unwrap();
+        let f = tmp.path().join("a.txt");
+        fs::write(&f, "keep").unwrap();
+
+        let report = move_paths_with(&[f.clone()], tmp.path(), ConflictPolicy::Overwrite).unwrap();
+
+        assert!(f.exists(), "source was destroyed");
+        assert_eq!(fs::read_to_string(&f).unwrap(), "keep");
+        assert_eq!(report.failed.len(), 1);
     }
 }

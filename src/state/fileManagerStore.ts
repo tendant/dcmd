@@ -348,6 +348,18 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       return;
     }
 
+    // Caught here as well as in the backend so the user is told plainly, rather
+    // than being shown a conflict dialog whose Replace option is destructive.
+    // Both panes open on the same directory, so this is easy to hit by accident.
+    if (state.panes[active].path === destination) {
+      state.setPaneError(active, {
+        kind: "invalidName",
+        message: `Both panes are showing the same folder.`,
+        hint: `Navigate the other pane somewhere else to ${op} into it.`,
+      });
+      return;
+    }
+
     try {
       const names = await commands.checkConflicts(sources, destination);
       if (names.length > 0) {

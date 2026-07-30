@@ -1,6 +1,7 @@
 use crate::error::FsError;
 use crate::operations::transfer::{
-    resolve_destination, ConflictPolicy, FailedItem, TransferControl, TransferReport,
+    check_not_same_directory, resolve_destination, ConflictPolicy, FailedItem, TransferControl,
+    TransferReport,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -105,6 +106,9 @@ fn copy_one(
     let file_name = source
         .file_name()
         .ok_or_else(|| FsError::Io("cannot get file name".to_string()))?;
+
+    // Before resolve_destination, which under Overwrite would delete the source.
+    check_not_same_directory(source, destination_dir)?;
 
     let dest = match resolve_destination(&destination_dir.join(file_name), policy)? {
         Some(d) => d,
@@ -408,5 +412,74 @@ mod cancel_tests {
         assert_eq!(report.completed.len(), 1);
         assert_eq!(fs::read_to_string(dest.join("src/a.txt")).unwrap(), "hello");
         assert!(!cancel.load(Ordering::Relaxed));
+    }
+}
+
+#[cfg(test)]
+mod same_dir_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    // Regression: Overwrite resolved the destination to the source itself and
+    // deleted it before copying, destroying the file outright. Reachable by
+    // default, since both panes open on the same directory.
+    #[test]
+    fn overwrite_into_the_same_directory_does_not_destroy_the_file() {
+        let tmp = TempDir::new().unwrap();
+        let f = tmp.path().join("important.txt");
+        fs::write(&f, "irreplaceable").unwrap();
+
+        let report =
+            copy_paths_with(&[f.clone()], tmp.path(), ConflictPolicy::Overwrite).unwrap();
+
+        assert!(f.exists(), "source file was destroyed");
+        assert_eq!(fs::read_to_string(&f).unwrap(), "irreplaceable");
+        assert_eq!(report.completed.len(), 0);
+        assert_eq!(report.failed.len(), 1);
+    }
+
+    #[test]
+    fn overwrite_a_directory_into_its_own_parent_does_not_destroy_it() {
+        let tmp = TempDir::new().unwrap();
+        let d = tmp.path().join("project");
+        fs::create_dir(&d).unwrap();
+        fs::write(d.join("code.rs"), "fn main(){}").unwrap();
+
+        let _ = copy_paths_with(&[d.clone()], tmp.path(), ConflictPolicy::Overwrite);
+
+        assert!(d.exists(), "source directory was destroyed");
+        assert_eq!(fs::read_to_string(d.join("code.rs")).unwrap(), "fn main(){}");
+    }
+
+    #[test]
+    fn every_policy_refuses_the_same_directory() {
+        for policy in [
+            ConflictPolicy::Fail,
+            ConflictPolicy::Skip,
+            ConflictPolicy::Overwrite,
+            ConflictPolicy::KeepBoth,
+        ] {
+            let tmp = TempDir::new().unwrap();
+            let f = tmp.path().join("a.txt");
+            fs::write(&f, "keep").unwrap();
+
+            let report = copy_paths_with(&[f.clone()], tmp.path(), policy).unwrap();
+            assert!(f.exists(), "{policy:?} destroyed the source");
+            assert_eq!(fs::read_to_string(&f).unwrap(), "keep");
+            assert!(report.completed.is_empty(), "{policy:?} should not have copied");
+        }
+    }
+
+    #[test]
+    fn a_different_directory_still_works() {
+        let tmp = TempDir::new().unwrap();
+        let f = tmp.path().join("a.txt");
+        fs::write(&f, "hello").unwrap();
+        let dest = tmp.path().join("dest");
+        fs::create_dir(&dest).unwrap();
+
+        let report = copy_paths_with(&[f], &dest, ConflictPolicy::Fail).unwrap();
+        assert_eq!(report.completed.len(), 1);
+        assert_eq!(fs::read_to_string(dest.join("a.txt")).unwrap(), "hello");
     }
 }

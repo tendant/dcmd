@@ -386,3 +386,44 @@ describe("error reporting", () => {
     expect(useFileManagerStore.getState().panes.left.error).toBeNull();
   });
 });
+
+describe("same source and destination folder", () => {
+  function bothPanesSameDir() {
+    seedPane(1);
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: { ...s.panes, right: { ...s.panes.right, path: "/left" } },
+    });
+  }
+
+  // The destructive path: a conflict dialog would offer Replace, and replacing
+  // into the source's own folder deletes the source before copying from it.
+  it("refuses a copy without ever asking about conflicts", async () => {
+    bothPanesSameDir();
+    await useFileManagerStore.getState().requestTransfer("copy");
+
+    expect(commands.checkConflicts).not.toHaveBeenCalled();
+    expect(commands.copyEntriesWith).not.toHaveBeenCalled();
+    expect(useFileManagerStore.getState().dialog).toBeNull();
+  });
+
+  it("refuses a move the same way", async () => {
+    bothPanesSameDir();
+    await useFileManagerStore.getState().requestTransfer("move");
+    expect(commands.moveEntriesWith).not.toHaveBeenCalled();
+  });
+
+  it("explains why, and what to do", async () => {
+    bothPanesSameDir();
+    await useFileManagerStore.getState().requestTransfer("copy");
+    const e = useFileManagerStore.getState().panes.left.error;
+    expect(e?.message).toMatch(/same folder/i);
+    expect(e?.hint).toMatch(/other pane/i);
+  });
+
+  it("still allows a transfer between different folders", async () => {
+    seedPane(1); // right pane is /right
+    await useFileManagerStore.getState().requestTransfer("copy");
+    expect(commands.checkConflicts).toHaveBeenCalled();
+  });
+});
