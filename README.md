@@ -7,7 +7,7 @@ Two panes side by side: one is the source, the other the destination. Copy,
 move, rename and delete work between them without ever reaching for the mouse.
 
 > **Status: early.** Browsing and file operations work and are covered by tests.
-> Pane resizing, bookmarks, search and preview are not implemented —
+> Bookmarks, search and preview are not implemented —
 > see [the design document](DCMD-Design-Document-v0.2.md) for what is planned.
 
 ## Running it
@@ -39,6 +39,9 @@ window `pnpm tauri dev` opens. The app says so rather than failing silently.
 | Clear filter, cancel a transfer | `Esc` |
 | Show/hide dotfiles | `⌘⇧.` / `Ctrl+H` |
 | Sort by name/size/modified/created/kind | `⌘1`–`⌘5`, or click a header |
+| Resize panes | `⌘⇧←→`, or drag the divider |
+| Even split | `⌘0`, or double-click the divider |
+| Collapse to one pane | `⌘\\` |
 | Copy to other pane | `F5` or `⌘⇧C` |
 | Move to other pane | `F6` or `⌘⇧M` |
 | New folder | `F7` or `⌘⇧N` |

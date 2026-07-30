@@ -28,6 +28,9 @@ const GROUPS: { label: string; keys: { keys: string[]; what: string }[] }[] = [
       { keys: [DEL], what: "Up" },
       { keys: [`${MOD}L`], what: "Edit path" },
       { keys: [`${MOD}R`], what: "Refresh" },
+      { keys: [`${MOD}${SHIFT}←→`], what: "Resize" },
+      { keys: [`${MOD}0`], what: "Even split" },
+      { keys: [`${MOD}\\`], what: "One pane" },
     ],
   },
   {

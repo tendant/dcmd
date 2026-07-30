@@ -91,26 +91,22 @@ No networking. No plugins. No settings.
 
 ## Pane sizing
 
-**TODO — not yet implemented.** The split is a fixed 50/50 (`flex-1` on each
-pane in `DualPaneLayout`), so neither pane can be widened.
+Implemented. The split is draggable, double-clicking the divider evens it up,
+and either pane can be collapsed for a single-pane view.
 
--   Draggable divider between the panes
--   Double-click the divider to reset to an even split
--   Keyboard adjustment, so it is reachable without the mouse
--   Collapse one pane entirely, and restore it
--   Remember the ratio across restarts
+-   `Cmd/Ctrl+Shift+←→` moves the divider, `Cmd/Ctrl+0` evens it,
+    `Cmd/Ctrl+\\` collapses the pane not in use
+-   The divider is focusable and takes arrow keys directly
+-   Stored as a ratio, so resizing the window cannot push a pane off-screen
+-   Clamped to 15% either side; collapsing is a separate deliberate action with
+    its own way back, rather than something a drag can do by accident
+-   A collapsed pane is removed from the layout rather than given zero width, so
+    it cannot take focus or be reached by Tab while invisible
+-   Focus moves to the other pane when the active one is collapsed
 
-Notes for whoever picks this up:
-
--   Store the split as a **ratio**, not a pixel width, or resizing the window
-    will push one pane off-screen.
--   Clamp to a sensible minimum so a pane cannot be dragged to zero by
-    accident; collapsing should be a deliberate action with its own way back.
--   The file list is virtualised against a measured container. The virtualiser
-    must be told the height changed, or rows will be positioned against a stale
-    measurement after a resize.
--   Persistence needs somewhere to live: there is no settings store yet, and
-    this is likely the first thing to want one.
+Not done: remembering the split across restarts. That needs the settings store
+sorting also wants — two features now depend on it, which makes it the next
+thing worth building.
 
 ## Sorting
 

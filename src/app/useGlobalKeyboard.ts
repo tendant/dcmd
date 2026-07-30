@@ -85,6 +85,24 @@ export function useGlobalKeyboard() {
           store.toggleHidden(pane);
           return;
         }
+        // Divider: reset with 0, nudge with shifted arrows, collapse with "\\".
+        if (key === "0") {
+          e.preventDefault();
+          store.resetSplit();
+          return;
+        }
+        if (e.shiftKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+          e.preventDefault();
+          store.nudgeSplit(e.key === "ArrowLeft" ? -0.05 : 0.05);
+          return;
+        }
+        if (key === "\\") {
+          // Collapses the pane that is not in use, leaving a single-pane view.
+          e.preventDefault();
+          store.toggleCollapse(pane === "left" ? "right" : "left");
+          return;
+        }
+
         // Cmd/Ctrl+1..5 select a sort key; pressing the active one reverses it.
         const SORT_KEYS = ["name", "size", "modified", "created", "kind"] as const;
         const digit = Number(key);

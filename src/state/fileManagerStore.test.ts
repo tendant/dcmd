@@ -722,3 +722,64 @@ describe("sorting", () => {
     expect(useFileManagerStore.getState().panes.right.sort.key).toBe("name");
   });
 });
+
+describe("pane sizing", () => {
+  beforeEach(() => {
+    useFileManagerStore.setState({ splitRatio: 0.5, collapsed: null, activePane: "left" });
+  });
+
+  it("starts evenly split", () => {
+    expect(useFileManagerStore.getState().splitRatio).toBe(0.5);
+  });
+
+  // A ratio, not a pixel width: resizing the window must not push a pane away.
+  it("clamps so a pane cannot be squeezed to nothing", () => {
+    const store = useFileManagerStore.getState();
+    store.setSplitRatio(0);
+    expect(useFileManagerStore.getState().splitRatio).toBeGreaterThan(0.1);
+    store.setSplitRatio(1);
+    expect(useFileManagerStore.getState().splitRatio).toBeLessThan(0.9);
+  });
+
+  it("clamps nudges the same way", () => {
+    const store = useFileManagerStore.getState();
+    for (let i = 0; i < 40; i++) store.nudgeSplit(-0.05);
+    expect(useFileManagerStore.getState().splitRatio).toBeGreaterThan(0.1);
+  });
+
+  it("nudges by the requested amount within range", () => {
+    useFileManagerStore.getState().nudgeSplit(0.1);
+    expect(useFileManagerStore.getState().splitRatio).toBeCloseTo(0.6);
+  });
+
+  it("resets to even and restores a collapsed pane", () => {
+    const store = useFileManagerStore.getState();
+    store.setSplitRatio(0.8);
+    store.toggleCollapse("right");
+    store.resetSplit();
+    const s = useFileManagerStore.getState();
+    expect(s.splitRatio).toBe(0.5);
+    expect(s.collapsed).toBeNull();
+  });
+
+  it("collapses and restores the same pane", () => {
+    const store = useFileManagerStore.getState();
+    store.toggleCollapse("right");
+    expect(useFileManagerStore.getState().collapsed).toBe("right");
+    useFileManagerStore.getState().toggleCollapse("right");
+    expect(useFileManagerStore.getState().collapsed).toBeNull();
+  });
+
+  // Focus cannot remain on a pane that is no longer on screen.
+  it("moves focus off a pane as it collapses", () => {
+    useFileManagerStore.setState({ activePane: "left" });
+    useFileManagerStore.getState().toggleCollapse("left");
+    expect(useFileManagerStore.getState().activePane).toBe("right");
+  });
+
+  it("leaves focus alone when collapsing the other pane", () => {
+    useFileManagerStore.setState({ activePane: "left" });
+    useFileManagerStore.getState().toggleCollapse("right");
+    expect(useFileManagerStore.getState().activePane).toBe("left");
+  });
+});

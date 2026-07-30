@@ -82,9 +82,24 @@ export interface ActiveTransfer {
   name: string;
 }
 
+/**
+ * Narrowest a pane may be dragged to, as a fraction of the window. Collapsing is
+ * a deliberate action with its own way back, so the divider must not be able to
+ * squeeze a pane to nothing by accident.
+ */
+export const MIN_SPLIT = 0.15;
+export const MAX_SPLIT = 1 - MIN_SPLIT;
+
 export interface FileManagerState {
   panes: Record<PaneId, PaneState>;
   activePane: PaneId;
+  /**
+   * Width of the left pane as a fraction of the window. A ratio rather than a
+   * pixel width, so resizing the window cannot push a pane off-screen.
+   */
+  splitRatio: number;
+  /** Which pane is hidden entirely, if either. */
+  collapsed: PaneId | null;
   dialog: DialogState | null;
   transfer: ActiveTransfer | null;
 
@@ -97,6 +112,11 @@ export interface FileManagerState {
   setFilter: (pane: PaneId, filter: string) => void;
   clearFilter: (pane: PaneId) => void;
   toggleHidden: (pane: PaneId) => void;
+  setSplitRatio: (ratio: number) => void;
+  nudgeSplit: (delta: number) => void;
+  resetSplit: () => void;
+  /** Hides a pane, or restores it if it is the one already hidden. */
+  toggleCollapse: (pane: PaneId) => void;
   /** Re-selecting the active key reverses it, which is what column headers do. */
   setSort: (pane: PaneId, key: SortKey) => void;
   setPaneError: (pane: PaneId, error: AppError | string | null) => void;
@@ -272,8 +292,30 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     right: defaultPaneState(""),
   },
   activePane: "left",
+  splitRatio: 0.5,
+  collapsed: null,
 
   setActivePane: (pane) => set({ activePane: pane }),
+
+  setSplitRatio: (ratio) =>
+    set({ splitRatio: Math.min(MAX_SPLIT, Math.max(MIN_SPLIT, ratio)) }),
+
+  nudgeSplit: (delta) => get().setSplitRatio(get().splitRatio + delta),
+
+  resetSplit: () => set({ splitRatio: 0.5, collapsed: null }),
+
+  toggleCollapse: (pane) =>
+    set((state) => {
+      const collapsed = state.collapsed === pane ? null : pane;
+      // Focus cannot stay on a pane that is no longer visible.
+      const activePane =
+        collapsed === state.activePane
+          ? state.activePane === "left"
+            ? "right"
+            : "left"
+          : state.activePane;
+      return { collapsed, activePane };
+    }),
 
   navigate: async (pane, path) => {
     // Abandoning the listing abandons its size walks; stop them server-side too
