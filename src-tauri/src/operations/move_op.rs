@@ -6,54 +6,8 @@ use crate::operations::transfer::{
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub fn move_paths(sources: &[PathBuf], destination_dir: &Path) -> Result<(), FsError> {
-    if !destination_dir.is_dir() {
-        return Err(FsError::NotADirectory(format!(
-            "destination is not a directory: {}",
-            destination_dir.display()
-        )));
-    }
-
-    for source in sources {
-        if !source.exists() {
-            return Err(FsError::NotFound(format!(
-                "source does not exist: {}",
-                source.display()
-            )));
-        }
-
-        let file_name = source.file_name().ok_or_else(|| {
-            FsError::Io("cannot get file name".to_string())
-        })?;
-
-        let dest = destination_dir.join(&file_name);
-
-        if dest.exists() {
-            return Err(FsError::AlreadyExists(format!(
-                "destination already exists: {}",
-                dest.display()
-            )));
-        }
-
-        // Same hazard as copy: the fallback path copies before deleting, and a
-        // rename into your own subdirectory is meaningless regardless.
-        if source.is_dir() {
-            crate::operations::copy::check_not_into_itself(source, destination_dir)?;
-        }
-
-        // Try a direct rename first (same filesystem)
-        match fs::rename(source, &dest) {
-            Ok(_) => continue,
-            Err(_) => {
-                // Fall back to copy + delete (cross-filesystem)
-                copy_then_delete(source, &dest)?;
-            }
-        }
-    }
-
-    Ok(())
-}
-
+/// Test-only convenience: see copy::copy_paths_with.
+#[cfg(test)]
 /// Moves each source into `destination_dir`, applying `policy` to name clashes and
 /// reporting per-item outcomes rather than abandoning the rest on first failure.
 pub fn move_paths_with(
@@ -261,6 +215,25 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), FsError> {
     Ok(())
 }
 
+/// Test-only: see copy::copy_strict.
+#[cfg(test)]
+fn move_strict(sources: &[PathBuf], destination_dir: &Path) -> Result<(), FsError> {
+    if !destination_dir.is_dir() {
+        return Err(FsError::NotADirectory(format!(
+            "destination is not a directory: {}",
+            destination_dir.display()
+        )));
+    }
+    let mut report = TransferReport::default();
+    for source in sources {
+        move_one(source, destination_dir, ConflictPolicy::Fail, &mut report)?;
+    }
+    if let Some(f) = report.failed.first() {
+        return Err(FsError::Io(f.message.clone()));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,7 +250,7 @@ mod tests {
         let src = src_dir.join("source.txt");
         fs::write(&src, "content").unwrap();
 
-        let result = move_paths(&[src.clone()], &dest_dir);
+        let result = move_strict(&[src.clone()], &dest_dir);
         assert!(result.is_ok());
         assert!(!src.exists());
         assert!(dest_dir.join("source.txt").exists());
@@ -296,7 +269,7 @@ mod tests {
         let dest_dir = base_dir.join("dest");
         fs::create_dir(&dest_dir).unwrap();
 
-        let result = move_paths(&[src_dir.clone()], &dest_dir);
+        let result = move_strict(&[src_dir.clone()], &dest_dir);
         assert!(result.is_ok());
         assert!(!src_dir.exists());
         assert!(dest_dir.join("source_dir/file.txt").exists());
@@ -304,13 +277,35 @@ mod tests {
 
     #[test]
     fn test_move_collision() {
+        // Previously this wrote the source and the "existing" file to the same
+        // path, so there was never a collision: it passed only because the
+        // destination was the source itself.
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        let dest_dir = temp_dir.path().join("dest");
+        fs::create_dir(&src_dir).unwrap();
+        fs::create_dir(&dest_dir).unwrap();
+
+        let src = src_dir.join("source.txt");
+        fs::write(&src, "content").unwrap();
+        fs::write(dest_dir.join("source.txt"), "existing").unwrap();
+
+        let result = move_strict(&[src.clone()], &dest_dir);
+        assert!(matches!(result, Err(FsError::AlreadyExists(_))), "got {result:?}");
+        // The refusal must leave both sides intact.
+        assert_eq!(fs::read_to_string(&src).unwrap(), "content");
+        assert_eq!(fs::read_to_string(dest_dir.join("source.txt")).unwrap(), "existing");
+    }
+
+    #[test]
+    fn moving_into_the_source_own_folder_is_refused() {
         let temp_dir = TempDir::new().unwrap();
         let src = temp_dir.path().join("source.txt");
         fs::write(&src, "content").unwrap();
-        fs::write(temp_dir.path().join("source.txt"), "existing").unwrap();
 
-        let result = move_paths(&[src], temp_dir.path());
-        assert!(matches!(result, Err(FsError::AlreadyExists(_))));
+        let result = move_strict(&[src.clone()], temp_dir.path());
+        assert!(matches!(result, Err(FsError::InvalidName(_))), "got {result:?}");
+        assert_eq!(fs::read_to_string(&src).unwrap(), "content");
     }
 
     #[test]

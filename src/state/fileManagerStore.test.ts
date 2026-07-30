@@ -8,8 +8,6 @@ vi.mock("../tauri/commands", () => ({
   cancelDirectorySize: vi.fn(async () => undefined),
   mkdir: vi.fn(),
   renameEntry: vi.fn(),
-  copyEntries: vi.fn(async () => undefined),
-  moveEntries: vi.fn(async () => undefined),
   trashEntries: vi.fn(async () => undefined),
   checkConflicts: vi.fn(async () => []),
   copyEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
@@ -75,14 +73,24 @@ describe("operations with no explicit selection", () => {
 
   it("copies the row under the cursor to the other pane", async () => {
     seedPane(1);
-    await useFileManagerStore.getState().copySelection();
-    expect(commands.copyEntries).toHaveBeenCalledWith(["/left/a.txt"], "/right");
+    await useFileManagerStore.getState().requestTransfer("copy");
+    expect(commands.copyEntriesWith).toHaveBeenCalledWith(
+      expect.any(String),
+      ["/left/a.txt"],
+      "/right",
+      "fail",
+    );
   });
 
   it("moves the row under the cursor to the other pane", async () => {
     seedPane(3);
-    await useFileManagerStore.getState().moveSelection();
-    expect(commands.moveEntries).toHaveBeenCalledWith(["/left/c.txt"], "/right");
+    await useFileManagerStore.getState().requestTransfer("move");
+    expect(commands.moveEntriesWith).toHaveBeenCalledWith(
+      expect.any(String),
+      ["/left/c.txt"],
+      "/right",
+      "fail",
+    );
   });
 });
 

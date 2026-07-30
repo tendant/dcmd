@@ -268,23 +268,7 @@ pub async fn rename(path: String, new_name: String) -> Result<FileEntry, FsError
         .map_err(|e| FsError::Io(format!("task join error: {e}")))?
 }
 
-#[tauri::command]
-pub async fn copy_entries(sources: Vec<String>, destination_dir: String) -> Result<(), FsError> {
-    let sources: Vec<PathBuf> = sources.into_iter().map(PathBuf::from).collect();
-    let dest = PathBuf::from(destination_dir);
-    tauri::async_runtime::spawn_blocking(move || operations::copy_paths(&sources, &dest))
-        .await
-        .map_err(|e| FsError::Io(format!("task join error: {e}")))?
-}
 
-#[tauri::command]
-pub async fn move_entries(sources: Vec<String>, destination_dir: String) -> Result<(), FsError> {
-    let sources: Vec<PathBuf> = sources.into_iter().map(PathBuf::from).collect();
-    let dest = PathBuf::from(destination_dir);
-    tauri::async_runtime::spawn_blocking(move || operations::move_paths(&sources, &dest))
-        .await
-        .map_err(|e| FsError::Io(format!("task join error: {e}")))?
-}
 
 #[tauri::command]
 pub async fn trash_entries(paths: Vec<String>) -> Result<(), FsError> {

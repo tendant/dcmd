@@ -17,12 +17,10 @@ pub fn run() {
             commands::cancel_directory_size,
             commands::mkdir,
             commands::rename,
-            commands::copy_entries,
             commands::copy_entries_with,
             commands::move_entries_with,
             commands::check_conflicts,
             commands::cancel_transfer,
-            commands::move_entries,
             commands::trash_entries,
         ])
         .run(tauri::generate_context!())

@@ -50,12 +50,6 @@ pub struct TransferReport {
     pub failed: Vec<FailedItem>,
 }
 
-impl TransferReport {
-    pub fn is_complete_success(&self) -> bool {
-        self.failed.is_empty() && self.skipped.is_empty()
-    }
-}
-
 /// Progress for a running transfer, emitted to the frontend as it advances.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

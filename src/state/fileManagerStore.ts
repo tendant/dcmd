@@ -103,8 +103,6 @@ export interface FileManagerState {
   startEditingPath: (pane: PaneId) => void;
   commitPathEdit: (pane: PaneId, newPath: string) => Promise<void>;
   cancelPathEdit: (pane: PaneId) => void;
-  copySelection: () => Promise<void>;
-  moveSelection: () => Promise<void>;
   trashSelection: (pane: PaneId) => Promise<void>;
 
   /** Begins a transfer, asking about name clashes first if there are any. */
@@ -684,51 +682,9 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     }));
   },
 
-  copySelection: async () => {
-    const state = get();
-    const active = state.activePane;
-    const other: PaneId = active === "left" ? "right" : "left";
 
-    const sources = targetPaths(state.panes[active]);
-    const destination = state.panes[other].path;
 
-    if (sources.length === 0 || !destination) {
-      state.setPaneError(active, "Nothing to copy");
-      return;
-    }
 
-    try {
-      await commands.copyEntries(sources, destination);
-      await state.refresh(active);
-      await state.refresh(other);
-      state.clearSelection(active);
-    } catch (err) {
-      get().reportError(other, err, "copy");
-    }
-  },
-
-  moveSelection: async () => {
-    const state = get();
-    const active = state.activePane;
-    const other: PaneId = active === "left" ? "right" : "left";
-
-    const sources = targetPaths(state.panes[active]);
-    const destination = state.panes[other].path;
-
-    if (sources.length === 0 || !destination) {
-      state.setPaneError(active, "Nothing to move");
-      return;
-    }
-
-    try {
-      await commands.moveEntries(sources, destination);
-      await state.refresh(active);
-      await state.refresh(other);
-      state.clearSelection(active);
-    } catch (err) {
-      get().reportError(other, err, "move");
-    }
-  },
 
   trashSelection: async (pane) => {
     const state = get();

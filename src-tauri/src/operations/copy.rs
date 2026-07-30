@@ -6,33 +6,9 @@ use crate::operations::transfer::{
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Fails on the first problem, preserving its error kind so callers can branch on
-/// it. Used where an all-or-nothing result is wanted instead of a report.
-pub fn copy_paths(sources: &[PathBuf], destination_dir: &Path) -> Result<(), FsError> {
-    if !destination_dir.is_dir() {
-        return Err(FsError::NotADirectory(format!(
-            "destination is not a directory: {}",
-            destination_dir.display()
-        )));
-    }
-    for source in sources {
-        let never = std::sync::atomic::AtomicBool::new(false);
-        let noop = |_: usize, _: usize, _: &str| {};
-        let mut throwaway = TransferReport::default();
-        copy_one(
-            source,
-            destination_dir,
-            ConflictPolicy::Fail,
-            &TransferControl { cancel: &never, on_progress: &noop },
-            &mut throwaway,
-        )?;
-        if let Some(f) = throwaway.failed.into_iter().next() {
-            return Err(FsError::Io(f.message));
-        }
-    }
-    Ok(())
-}
-
+/// Test-only convenience: a transfer with no progress reporting or cancellation.
+/// Production goes through `copy_paths_controlled`.
+#[cfg(test)]
 /// Copies each source into `destination_dir`, applying `policy` to name clashes.
 ///
 /// One item failing no longer abandons the remainder: the caller gets a report of
@@ -346,6 +322,30 @@ fn copy_dir_recursive(
     Ok(())
 }
 
+/// Test-only: copy everything, failing on the first problem with its error kind
+/// intact. Routes through the production `copy_one`, so tests exercise the same
+/// code the app does rather than a parallel implementation.
+#[cfg(test)]
+fn copy_strict(sources: &[PathBuf], destination_dir: &Path) -> Result<(), FsError> {
+    if !destination_dir.is_dir() {
+        return Err(FsError::NotADirectory(format!(
+            "destination is not a directory: {}",
+            destination_dir.display()
+        )));
+    }
+    let never = std::sync::atomic::AtomicBool::new(false);
+    let noop = |_: usize, _: usize, _: &str| {};
+    let control = TransferControl { cancel: &never, on_progress: &noop };
+    let mut report = TransferReport::default();
+    for source in sources {
+        copy_one(source, destination_dir, ConflictPolicy::Fail, &control, &mut report)?;
+    }
+    if let Some(f) = report.failed.first() {
+        return Err(FsError::Io(f.message.clone()));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,7 +362,7 @@ mod tests {
         let src = src_dir.join("source.txt");
         fs::write(&src, "content").unwrap();
 
-        let result = copy_paths(&[src.clone()], &dest_dir);
+        let result = copy_strict(&[src.clone()], &dest_dir);
         assert!(result.is_ok());
         assert!(src.exists());
         assert!(dest_dir.join("source.txt").exists());
@@ -383,7 +383,7 @@ mod tests {
         let dest_dir = base_dir.join("dest");
         fs::create_dir(&dest_dir).unwrap();
 
-        let result = copy_paths(&[src_dir.clone()], &dest_dir);
+        let result = copy_strict(&[src_dir.clone()], &dest_dir);
         assert!(result.is_ok());
 
         let copied_dir = dest_dir.join("source_dir");
@@ -404,7 +404,7 @@ mod tests {
         fs::write(&src, "content").unwrap();
         fs::write(dest_dir.join("source.txt"), "existing").unwrap();
 
-        let result = copy_paths(&[src], &dest_dir);
+        let result = copy_strict(&[src], &dest_dir);
         assert!(matches!(result, Err(FsError::AlreadyExists(_))));
     }
 
@@ -413,7 +413,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let nonexistent = temp_dir.path().join("nonexistent.txt");
 
-        let result = copy_paths(&[nonexistent], temp_dir.path());
+        let result = copy_strict(&[nonexistent], temp_dir.path());
         assert!(matches!(result, Err(FsError::NotFound(_))));
     }
 }
@@ -451,7 +451,7 @@ mod containment_tests {
         let inner = foo.join("inner");
         fs::create_dir(&inner).unwrap();
 
-        let err = copy_paths(&[foo.clone()], &inner).unwrap_err();
+        let err = copy_strict(&[foo.clone()], &inner).unwrap_err();
         assert!(matches!(err, FsError::InvalidName(_)), "got {err:?}");
 
         // The real damage was the debris left behind, so assert the source is intact.
@@ -465,7 +465,7 @@ mod containment_tests {
         let tmp = TempDir::new().unwrap();
         let foo = tmp.path().join("foo");
         fs::create_dir(&foo).unwrap();
-        let err = copy_paths(&[foo.clone()], &foo).unwrap_err();
+        let err = copy_strict(&[foo.clone()], &foo).unwrap_err();
         assert!(matches!(err, FsError::InvalidName(_)), "got {err:?}");
     }
 
@@ -478,7 +478,7 @@ mod containment_tests {
         let dest = tmp.path().join("dest");
         fs::create_dir(&dest).unwrap();
 
-        copy_paths(&[foo.clone()], &dest).unwrap();
+        copy_strict(&[foo.clone()], &dest).unwrap();
         assert_eq!(fs::read_to_string(dest.join("foo/f.txt")).unwrap(), "hello");
     }
 
@@ -495,7 +495,7 @@ mod containment_tests {
 
         let dest = tmp.path().join("dest");
         fs::create_dir(&dest).unwrap();
-        let _ = copy_paths(&[src.clone()], &dest);
+        let _ = copy_strict(&[src.clone()], &dest);
 
         let (_, depth) = count_tree(&dest, 0);
         assert!(depth < 20, "symlink cycle recursed to depth {depth}");
