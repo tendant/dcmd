@@ -21,16 +21,6 @@ export function useGlobalKeyboard() {
       // filter behind it. The dialog handles its own Escape.
       if (store.dialog) return;
 
-      // Edit the path. Matched case-insensitively: with Caps Lock or Shift held,
-      // e.key is "L" and a literal comparison silently fails. Handled before the
-      // input guard so it also re-focuses the path field while already editing.
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
-        e.preventDefault();
-        const pane = store.activePane;
-        store.startEditingPath(pane);
-        return;
-      }
-
       // Don't intercept when typing in inputs or textareas
       if (
         e.target instanceof HTMLInputElement ||
@@ -39,114 +29,11 @@ export function useGlobalKeyboard() {
         return;
       }
 
-      // macOS reserves F5-F8 for system functions (dictation, Do Not Disturb,
-      // media keys), so they never reach the app unless the user holds Fn or
-      // enables "Use F1, F2, etc. as standard function keys". Provide Cmd
-      // equivalents so the app is usable without fighting the OS, following
-      // Finder's bindings where they exist.
-      if (e.metaKey || e.ctrlKey) {
-        const pane = store.activePane;
-        const key = e.key.toLowerCase();
-
-        if (key === "backspace") {
-          e.preventDefault();
-          confirmAndTrash(store);
-          return;
-        }
-        if (e.shiftKey && key === "n") {
-          e.preventDefault();
-          store.startCreatingFolder(pane);
-          return;
-        }
-        if (e.shiftKey && key === "c") {
-          e.preventDefault();
-          store.requestTransfer("copy");
-          return;
-        }
-        if (e.shiftKey && key === "m") {
-          e.preventDefault();
-          store.requestTransfer("move");
-          return;
-        }
-        if (e.shiftKey && key === "r") {
-          e.preventDefault();
-          const paneState = store.panes[pane];
-          if (paneState.cursor > 0) {
-            const entry = entryAtCursor(paneState);
-            if (entry) store.startRenaming(pane, entry.path);
-          }
-          return;
-        }
-        // Finder uses Cmd+Shift+. for this; Linux and Windows file managers use
-        // Ctrl+H. Both are accepted. Matched on e.code because Shift+. produces
-        // ">" rather than "." on most layouts.
-        if (e.code === "Period" || (!e.shiftKey && key === "h")) {
-          e.preventDefault();
-          store.toggleHidden(pane);
-          return;
-        }
-        // Divider: reset with 0, nudge with shifted arrows, collapse with "\\".
-        if (key === "0") {
-          e.preventDefault();
-          store.resetSplit();
-          return;
-        }
-        if (e.shiftKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
-          e.preventDefault();
-          store.nudgeSplit(e.key === "ArrowLeft" ? -0.05 : 0.05);
-          return;
-        }
-        if (key === "\\") {
-          // Collapses the pane that is not in use, leaving a single-pane view.
-          e.preventDefault();
-          store.toggleCollapse(pane === "left" ? "right" : "left");
-          return;
-        }
-
-        // Cmd/Ctrl+1..5 select a sort key; pressing the active one reverses it.
-        const SORT_KEYS = ["name", "size", "modified", "created", "kind"] as const;
-        const digit = Number(key);
-        if (Number.isInteger(digit) && digit >= 1 && digit <= SORT_KEYS.length) {
-          e.preventDefault();
-          store.setSort(pane, SORT_KEYS[digit - 1]);
-          return;
-        }
-        // Back and forward. Cmd+[ / Cmd+] is the macOS convention; Alt+arrows
-        // is the one everywhere else, and both are accepted on either platform.
-        if (key === "[" || (e.altKey && e.key === "ArrowLeft")) {
-          e.preventDefault();
-          store.goBack(pane);
-          return;
-        }
-        if (key === "]" || (e.altKey && e.key === "ArrowRight")) {
-          e.preventDefault();
-          store.goForward(pane);
-          return;
-        }
-        if (key === "d") {
-          e.preventDefault();
-          const path = store.panes[pane].path;
-          if (store.isBookmarked(path)) store.removeBookmark(path);
-          else store.addBookmark(pane);
-          return;
-        }
-        if (key === "r") {
-          // preventDefault matters here: unhandled, Cmd+R reloads the webview
-          // and throws away all pane state.
-          e.preventDefault();
-          store.refresh(pane);
-          return;
-        }
-      }
-
-      // Alt+arrows on their own, for the platforms where that is the binding.
-      if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
-        e.preventDefault();
-        const pane = store.activePane;
-        if (e.key === "ArrowLeft") store.goBack(pane);
-        else store.goForward(pane);
-        return;
-      }
+      // Every Cmd/Ctrl shortcut is owned by the application menu, which fires
+      // its own accelerator. Handling them here as well would run each command
+      // twice. What remains below is the contextual keys, which cannot be
+      // accelerators because their meaning depends on state.
+      if (e.metaKey || e.ctrlKey) return;
 
       switch (e.key) {
         case "Tab": {

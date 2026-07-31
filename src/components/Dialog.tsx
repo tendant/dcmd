@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useFileManagerStore } from "../state/fileManagerStore";
 import { toAppError } from "../errors";
+import { AddRemoteDialog } from "./AddRemoteDialog";
 
 const basename = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 
@@ -34,6 +35,7 @@ export function Dialog() {
   const dismiss = useFileManagerStore((s) => s.dismissDialog);
   const performTransfer = useFileManagerStore((s) => s.performTransfer);
   const trashSelection = useFileManagerStore((s) => s.trashSelection);
+  const runRsync = useFileManagerStore((s) => s.runRsync);
   const defaultRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -123,6 +125,42 @@ export function Dialog() {
               <button ref={defaultRef} className={primary} onClick={dismiss}>
                 Close
               </button>
+            </div>
+          </>
+        ) : dialog.kind === "addRemote" ? (
+          <AddRemoteDialog available={dialog.available} onDone={dismiss} />
+        ) : dialog.kind === "rsyncPreview" ? (
+          <>
+            <h2 className="text-base font-semibold">
+              {dialog.changes.length === 0
+                ? "Nothing to transfer"
+                : `Transfer ${dialog.changes.length} item${
+                    dialog.changes.length === 1 ? "" : "s"
+                  }?`}
+            </h2>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+              {dialog.changes.length === 0
+                ? "Everything is already up to date at the destination."
+                : `rsync would write these to ${dialog.destination.alias ?? "this machine"}:${
+                    dialog.destination.path
+                  }`}
+            </p>
+            {/* rsync can say exactly what it would do, so the user agrees to a
+                specific list rather than to the idea of a transfer. */}
+            {dialog.changes.length > 0 && <NameList names={dialog.changes} limit={12} />}
+            <div className="mt-3 flex justify-end gap-2">
+              <button className={button} onClick={dismiss}>
+                Cancel
+              </button>
+              {dialog.changes.length > 0 && (
+                <button
+                  ref={defaultRef}
+                  className={primary}
+                  onClick={() => runRsync(dialog.pane, dialog.sources, dialog.destination)}
+                >
+                  Transfer
+                </button>
+              )}
             </div>
           </>
         ) : dialog.kind === "conflict" ? (

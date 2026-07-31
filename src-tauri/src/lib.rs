@@ -1,7 +1,10 @@
 mod commands;
 mod error;
 mod fs;
+pub mod logging;
+pub mod menu;
 mod operations;
+pub mod remote;
 pub mod settings;
 
 /// When `DCMD_TRACE_STARTUP=1`, report milestones as milliseconds since process
@@ -45,8 +48,22 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(commands::SizeCalculations::default())
         .manage(commands::Transfers::default())
+        // Unix-only: remote browsing drives the system ssh binary.
+        .manage({
+            #[cfg(unix)]
+            {
+                remote::session::Connections::default()
+            }
+            #[cfg(not(unix))]
+            {
+                ()
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::list_directory,
+            commands::list_remote_directory,
+            commands::rsync_transfer,
+            commands::ssh_config_hosts,
             commands::mark_startup,
             commands::startup_info,
             commands::save_settings,
@@ -62,10 +79,32 @@ pub fn run() {
             commands::check_conflicts,
             commands::cancel_transfer,
             commands::trash_entries,
+            logging::log_message,
+            logging::open_log,
         ])
-        .setup(|_app| {
+        .setup(|app| {
             trace_startup("window created");
+            // Built here rather than declaratively so the ids and accelerators
+            // live next to the code that documents why each one is safe.
+            let handle = app.handle();
+            // Marks the start of a session in the log, and proves at a glance
+            // whether the log file can be written at all.
+            logging::append(handle, "info", "app started");
+            match menu::build(handle) {
+                Ok(m) => {
+                    let _ = app.set_menu(m);
+                }
+                // A missing menu should not stop the app opening: every command
+                // is also reachable from the context menu.
+                Err(e) => {
+                    eprintln!("could not build the menu: {e}");
+                    logging::append(handle, "error", &format!("menu build failed: {e}"));
+                }
+            }
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            menu::handle_event(app, event.id().as_ref());
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

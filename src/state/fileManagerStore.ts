@@ -42,6 +42,12 @@ export interface PaneState {
   showHidden: boolean;
   /** Sort applied to this pane's rows. Per pane, for the same reason. */
   sort: SortOrder;
+  /**
+   * Alias of the SSH host this pane is browsing, or null for the local machine.
+   * Remote panes are read-only apart from rsync, so nothing destructive here
+   * can reach the far side.
+   */
+  remote: string | null;
   /** Directories visited in this pane, oldest first. */
   history: string[];
   /** Position within `history`; entries after it are the forward stack. */
@@ -77,6 +83,24 @@ export type DialogState =
       kind: "confirmTrash";
       pane: PaneId;
       paths: string[];
+    }
+  | {
+      /** Choosing a host to add, from the user's ssh config. */
+      kind: "addRemote";
+      pane: PaneId;
+      available: string[];
+    }
+  | {
+      /**
+       * What an rsync transfer would change, shown before it runs. rsync can say
+       * this exactly, which makes a remote transfer far easier to agree to than
+       * a local one.
+       */
+      kind: "rsyncPreview";
+      pane: PaneId;
+      sources: commands.RsyncEndpoint[];
+      destination: commands.RsyncEndpoint;
+      changes: string[];
     }
   | {
       /** Shown after a transfer that did not fully succeed, listing each item. */
@@ -124,6 +148,12 @@ export interface ContextMenuState {
   pane: PaneId;
   /** null when the click landed on empty space rather than a row. */
   path: string | null;
+  /**
+   * Set when the menu was opened on a places-bar chip rather than inside a pane.
+   * Those need their own actions — a bookmark is not a file, and offering to
+   * rename or trash one would be nonsense.
+   */
+  place?: { kind: "bookmark" | "remote"; id: string };
 }
 
 export interface FileManagerState {
@@ -136,6 +166,18 @@ export interface FileManagerState {
   splitRatio: number;
   /** Pinned directories, shared by both panes. */
   bookmarks: commands.Bookmark[];
+  /** Saved SSH hosts. */
+  remotes: commands.Remote[];
+  /** Whether the places bar is shown. */
+  showPlaces: boolean;
+  /**
+   * Remote listings kept for the session, keyed by alias and path.
+   *
+   * Not persisted: a listing from yesterday is indistinguishable from a fresh
+   * one, and a decision made from it could be wrong. Within a session the age
+   * is shown, so stale is visible rather than assumed.
+   */
+  remoteCache: Record<string, { entries: FileEntry[]; fetchedAt: number }>;
   /** Which pane is hidden entirely, if either. */
   collapsed: PaneId | null;
   /** Open context menu, if any. Holds a path rather than an entry so it cannot
@@ -173,6 +215,17 @@ export interface FileManagerState {
   addBookmark: (pane: PaneId) => void;
   removeBookmark: (path: string) => void;
   isBookmarked: (path: string) => boolean;
+  /** Points a pane at a host, or back at the local machine with null. */
+  connectPane: (pane: PaneId, alias: string | null, path?: string) => Promise<void>;
+  togglePlaces: () => void;
+  /** Offers the ssh config's hosts so an alias never has to be typed. */
+  requestAddRemote: (pane: PaneId) => Promise<void>;
+  addRemote: (alias: string, startPath?: string) => void;
+  removeRemote: (alias: string) => void;
+  /** Opens the nth bookmark, then the nth host, as one flat list. */
+  openPlace: (index: number, pane: PaneId) => void;
+  /** How old this pane's listing is, in ms, or null when it is not cached. */
+  listingAge: (pane: PaneId) => number | null;
   openContextMenu: (menu: ContextMenuState) => void;
   closeContextMenu: () => void;
   revealEntry: (pane: PaneId, path: string) => Promise<void>;
@@ -190,6 +243,8 @@ export interface FileManagerState {
   cancelAllDirSizes: (pane: PaneId) => void;
   selectRange: (pane: PaneId, fromIndex: number, toIndex: number) => void;
   clearSelection: (pane: PaneId) => void;
+  selectAll: (pane: PaneId) => void;
+  invertSelection: (pane: PaneId) => void;
 
   startCreatingFolder: (pane: PaneId) => void;
   startRenaming: (pane: PaneId, path: string) => void;
@@ -203,6 +258,12 @@ export interface FileManagerState {
 
   /** Begins a transfer, asking about name clashes first if there are any. */
   requestTransfer: (op: "copy" | "move") => Promise<void>;
+  /** Runs an rsync transfer that the user has seen a preview of. */
+  runRsync: (
+    pane: PaneId,
+    sources: commands.RsyncEndpoint[],
+    destination: commands.RsyncEndpoint,
+  ) => Promise<void>;
   /** Runs a transfer with a decided conflict policy. */
   performTransfer: (
     op: "copy" | "move",
@@ -319,6 +380,17 @@ export const visibleEntries = (paneState: PaneState): FileEntry[] => {
 };
 
 /**
+ * Where the cursor sits in a directory that has just been listed: the first
+ * real entry, or the ".." row when there is nothing else.
+ *
+ * Starting on ".." meant the first thing every operation acted on was nothing —
+ * copy, rename and size all no-op there, so arriving in a folder always cost a
+ * keystroke before anything could happen.
+ */
+export const initialCursor = (paneState: PaneState): number =>
+  visibleEntries(paneState).length > 0 ? 1 : 0;
+
+/**
  * The entry under the cursor, or null when the cursor is on the synthetic ".."
  * row (display index 0), which is never a real entry. Centralised so the
  * display-index-to-entry-index offset exists in exactly one place.
@@ -351,6 +423,7 @@ const defaultPaneState = (path: string): PaneState => ({
   renameMode: null,
   isEditingPath: false,
   filter: "",
+  remote: null,
   history: [],
   historyIndex: -1,
   showHidden: false,
@@ -369,6 +442,73 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   collapsed: null,
   contextMenu: null,
   bookmarks: [],
+  remotes: [],
+  showPlaces: true,
+  remoteCache: {},
+
+  togglePlaces: () => set((state) => ({ showPlaces: !state.showPlaces })),
+
+  requestAddRemote: async (pane) => {
+    try {
+      const hosts = await commands.sshConfigHosts();
+      const known = new Set(get().remotes.map((r) => r.alias));
+      set({
+        dialog: { kind: "addRemote", pane, available: hosts.filter((h) => !known.has(h)) },
+      });
+    } catch (err) {
+      get().reportError(pane, err);
+    }
+  },
+
+  addRemote: (alias, startPath) =>
+    set((state) => {
+      if (!alias.trim() || state.remotes.some((r) => r.alias === alias)) return {};
+      return {
+        dialog: null,
+        remotes: [
+          ...state.remotes,
+          // Named after the alias: that is what the user already calls it.
+          { name: alias, alias, startPath: startPath?.trim() || "." },
+        ],
+      };
+    }),
+
+  removeRemote: (alias) =>
+    set((state) => ({ remotes: state.remotes.filter((r) => r.alias !== alias) })),
+
+  openPlace: (index, pane) => {
+    const { bookmarks, remotes } = get();
+    if (index < bookmarks.length) {
+      void get().navigate(pane, bookmarks[index].path);
+      return;
+    }
+    const remote = remotes[index - bookmarks.length];
+    if (remote) void get().connectPane(pane, remote.alias);
+  },
+
+  connectPane: async (pane, alias, path) => {
+    const target =
+      path ??
+      (alias
+        ? get().remotes.find((r) => r.alias === alias)?.startPath || "/"
+        : "/");
+    set((state) => ({
+      panes: {
+        ...state.panes,
+        // History belongs to a machine; carrying it across would offer to go
+        // "back" to a path that does not exist on the new one.
+        [pane]: { ...state.panes[pane], remote: alias, history: [], historyIndex: -1 },
+      },
+    }));
+    await get().navigate(pane, target);
+  },
+
+  listingAge: (pane) => {
+    const p = get().panes[pane];
+    if (!p.remote) return null;
+    const hit = get().remoteCache[`${p.remote}:${p.path}`];
+    return hit ? Date.now() - hit.fetchedAt : null;
+  },
 
   addBookmark: (pane) =>
     set((state) => {
@@ -435,6 +575,8 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         // Already clamped and validated by the backend.
         splitRatio: settings.splitRatio,
         bookmarks: settings.bookmarks ?? [],
+        remotes: settings.remotes ?? [],
+        showPlaces: settings.showPlaces ?? true,
         panes: {
           left: forPane("left", settings.left),
           right: forPane("right", settings.right),
@@ -527,17 +669,44 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     });
 
     try {
-      const entries = await commands.listDirectory(path);
-      set((state) => ({
-        panes: {
-          ...state.panes,
-          [pane]: {
-            ...state.panes[pane],
-            entries,
-            loading: false,
+      const alias = get().panes[pane].remote;
+      let entries: FileEntry[];
+      if (alias) {
+        const key = `${alias}:${path}`;
+        const cached = get().remoteCache[key];
+        if (cached) {
+          entries = cached.entries;
+        } else {
+          const listing = await commands.listRemoteDirectory(alias, path);
+          entries = listing.entries;
+          // The server resolves what was asked for — "~" and "." are not paths
+          // SFTP understands — so show where we actually landed.
+          if (listing.path !== path) {
+            set((s2) => ({
+              panes: { ...s2.panes, [pane]: { ...s2.panes[pane], path: listing.path } },
+              remoteCache: {
+                ...s2.remoteCache,
+                [`${alias}:${listing.path}`]: { entries, fetchedAt: Date.now() },
+              },
+            }));
+          } else {
+            set((s2) => ({
+              remoteCache: { ...s2.remoteCache, [key]: { entries, fetchedAt: Date.now() } },
+            }));
+          }
+        }
+      } else {
+        entries = await commands.listDirectory(path);
+      }
+      set((state) => {
+        const next = { ...state.panes[pane], entries, loading: false };
+        return {
+          panes: {
+            ...state.panes,
+            [pane]: { ...next, cursor: initialCursor(next) },
           },
-        },
-      }));
+        };
+      });
     } catch (err) {
       set((state) => ({
         panes: {
@@ -581,7 +750,20 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     }));
 
     try {
-      const entries = await commands.listDirectory(path);
+      const alias = before.remote;
+      // Refresh is the way to say "I do not trust the cache", so it always
+      // refetches and replaces what was stored.
+      const entries = alias
+        ? (await commands.listRemoteDirectory(alias, path)).entries
+        : await commands.listDirectory(path);
+      if (alias) {
+        set((s2) => ({
+          remoteCache: {
+            ...s2.remoteCache,
+            [`${alias}:${path}`]: { entries, fetchedAt: Date.now() },
+          },
+        }));
+      }
 
       set((state) => {
         const paneState = state.panes[pane];
@@ -655,12 +837,74 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
 
   dismissDialog: () => set({ dialog: null }),
 
+  runRsync: async (pane, sources, destination) => {
+    const state = get();
+    const id = `rsync-${transferSeq++}`;
+    set({
+      dialog: null,
+      transfer: { id, op: "copy", pane, current: 0, total: sources.length, name: "" },
+    });
+    try {
+      const report = await commands.rsyncTransfer(id, sources, destination, false);
+      await state.refresh(pane);
+      await state.refresh(pane === "left" ? "right" : "left");
+      if (report.errors.length > 0) {
+        state.setPaneError(pane, {
+          kind: "io",
+          message: `Transfer finished with problems.`,
+          detail: report.errors.join("\n"),
+        });
+      }
+    } catch (err) {
+      state.reportError(pane, err, "copy");
+    } finally {
+      set((s2) => (s2.transfer?.id === id ? { transfer: null } : {}));
+    }
+  },
+
   requestTransfer: async (op) => {
     const state = get();
     const active = state.activePane;
     const other: PaneId = active === "left" ? "right" : "left";
     const sources = targetPaths(state.panes[active]);
     const destination = state.panes[other].path;
+
+    // A transfer with a host on either end is rsync's job, not ours.
+    const fromRemote = state.panes[active].remote;
+    const toRemote = state.panes[other].remote;
+    if (fromRemote || toRemote) {
+      if (sources.length === 0 || !destination) {
+        state.setPaneError(active, `Nothing to ${op}`);
+        return;
+      }
+      if (op === "move") {
+        state.setPaneError(active, {
+          kind: "invalidName",
+          message: "Moving to or from a host is not supported yet.",
+          hint: "Copy it across, then delete the original once you are satisfied.",
+        });
+        return;
+      }
+      const ends = sources.map((p) => ({ alias: fromRemote, path: p }));
+      const dest = { alias: toRemote, path: destination };
+      const id = `rsync-dry-${transferSeq++}`;
+      try {
+        // Ask rsync what it would do, and show that before writing anything.
+        const preview = await commands.rsyncTransfer(id, ends, dest, true);
+        set({
+          dialog: {
+            kind: "rsyncPreview",
+            pane: active,
+            sources: ends,
+            destination: dest,
+            changes: preview.changes,
+          },
+        });
+      } catch (err) {
+        state.reportError(active, err, "copy");
+      }
+      return;
+    }
 
     if (sources.length === 0 || !destination) {
       state.setPaneError(active, `Nothing to ${op}`);
@@ -962,6 +1206,42 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         },
       },
     }));
+  },
+
+  // Both act on what is on screen, not on every entry: with a filter active,
+  // selecting rows you cannot see and then copying them would be a nasty
+  // surprise. Neither triggers a directory size walk — that stays on Space,
+  // where it is one folder at a time and deliberate.
+  selectAll: (pane) => {
+    set((state) => {
+      const p = state.panes[pane];
+      return {
+        panes: {
+          ...state.panes,
+          [pane]: {
+            ...p,
+            selected: new Set(visibleEntries(p).map((e) => e.path)),
+            rangeStart: null,
+          },
+        },
+      };
+    });
+  },
+
+  invertSelection: (pane) => {
+    set((state) => {
+      const p = state.panes[pane];
+      const next = new Set<string>();
+      for (const e of visibleEntries(p)) {
+        if (!p.selected.has(e.path)) next.add(e.path);
+      }
+      return {
+        panes: {
+          ...state.panes,
+          [pane]: { ...p, selected: next, rangeStart: null },
+        },
+      };
+    });
   },
 
   startCreatingFolder: (pane) => {

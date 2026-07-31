@@ -10,7 +10,9 @@ import type { Settings } from "../tauri/commands";
 const base = (): Settings => ({
   version: 2,
   bookmarks: [],
+  remotes: [],
   splitRatio: 0.5,
+  showPlaces: true,
   left: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 64, modified: 64 } },
   right: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 64, modified: 64 } },
 });

@@ -4,11 +4,24 @@ import { useGlobalKeyboard } from "./useGlobalKeyboard";
 import { DualPaneLayout } from "../components/DualPaneLayout";
 import * as commands from "../tauri/commands";
 import { createSettingsSaver, settingsFrom } from "../state/settings";
+import { listen } from "@tauri-apps/api/event";
+import { MENU_ACTIONS } from "./menuActions";
 
 const saver = createSettingsSaver();
 
 export function App() {
   useGlobalKeyboard();
+
+  useEffect(() => {
+    // The menu owns its accelerators, so a command invoked from it reaches the
+    // same store action the keyboard would.
+    const unlisten = listen<string>("menu://action", (e) => {
+      MENU_ACTIONS[e.payload]?.(useFileManagerStore.getState());
+    });
+    return () => {
+      unlisten.then((f) => f()).catch(() => {});
+    };
+  }, []);
 
   useEffect(() => {
     // The webview shows its own menu (Reload, Inspect) otherwise, on top of
@@ -58,6 +71,7 @@ export function App() {
 
     initializePanes().catch((err) => {
       console.error("Failed to initialize panes:", err);
+      void commands.logMessage("error", `failed to initialize panes: ${String(err)}`);
     });
 
     return () => {

@@ -11,6 +11,9 @@ fn default_version() -> u32 {
 fn default_split() -> f64 {
     0.5
 }
+fn default_true() -> bool {
+    true
+}
 fn default_sort_key() -> String {
     "name".to_string()
 }
@@ -74,10 +77,17 @@ pub struct Settings {
     pub version: u32,
     #[serde(default = "default_split")]
     pub split_ratio: f64,
+    /// Whether the places bar is shown. Defaults on: it is the only place
+    /// bookmarks and hosts are visible without opening a menu.
+    #[serde(default = "default_true")]
+    pub show_places: bool,
     pub left: PaneSettings,
     pub right: PaneSettings,
     #[serde(default)]
     pub bookmarks: Vec<Bookmark>,
+    /// Saved SSH hosts available for remote browsing.
+    #[serde(default)]
+    pub remotes: Vec<crate::remote::Remote>,
     /// Version 1 kept one set of column widths for both panes. Retained only so
     /// an existing file can be migrated; never written back.
     #[serde(skip_serializing)]
@@ -89,9 +99,11 @@ impl Default for Settings {
         Self {
             version: CURRENT_VERSION,
             split_ratio: default_split(),
+            show_places: true,
             left: PaneSettings::default(),
             right: PaneSettings::default(),
             bookmarks: Vec::new(),
+            remotes: Vec::new(),
             columns: None,
         }
     }
@@ -143,6 +155,13 @@ impl Settings {
         self.bookmarks
             .retain(|b| !b.path.trim().is_empty() && seen.insert(b.path.clone()));
         self.bookmarks.truncate(MAX_BOOKMARKS);
+
+        // A remote with no alias cannot be connected to, and duplicates would
+        // appear twice in every menu.
+        let mut seen_alias = std::collections::HashSet::new();
+        self.remotes
+            .retain(|r| !r.alias.trim().is_empty() && seen_alias.insert(r.alias.clone()));
+        self.remotes.truncate(MAX_BOOKMARKS);
 
         self.version = CURRENT_VERSION;
         self
@@ -366,6 +385,37 @@ mod tests {
             .collect();
         let s = parse(&format!(r#"{{"bookmarks":[{}]}}"#, many.join(",")));
         assert_eq!(s.bookmarks.len(), MAX_BOOKMARKS);
+    }
+
+    #[test]
+    fn remotes_round_trip() {
+        let s = Settings {
+            remotes: vec![crate::remote::Remote {
+                name: "Build box".into(),
+                alias: "build".into(),
+                start_path: "/home/ci".into(),
+            }],
+            ..Settings::default()
+        };
+        assert_eq!(parse(&serialise(&s)).remotes, s.remotes);
+    }
+
+    #[test]
+    fn remotes_without_an_alias_are_dropped() {
+        let s = parse(r#"{"remotes":[{"name":"broken","alias":""},{"name":"ok","alias":"h"}]}"#);
+        assert_eq!(s.remotes.len(), 1);
+        assert_eq!(s.remotes[0].alias, "h");
+    }
+
+    #[test]
+    fn duplicate_remotes_are_collapsed() {
+        let s = parse(r#"{"remotes":[{"name":"a","alias":"h"},{"name":"again","alias":"h"}]}"#);
+        assert_eq!(s.remotes.len(), 1);
+    }
+
+    #[test]
+    fn a_file_without_remotes_still_loads() {
+        assert!(parse(r#"{"splitRatio":0.6}"#).remotes.is_empty());
     }
 
     #[test]

@@ -1,10 +1,10 @@
 import { useRef } from "react";
 import { Pane } from "./Pane";
-import { Toolbar } from "./Toolbar";
 import { Dialog } from "./Dialog";
 import { TransferProgressBar } from "./TransferProgressBar";
 import { PaneDivider } from "./PaneDivider";
 import { ContextMenu } from "./ContextMenu";
+import { PlacesBar } from "./PlacesBar";
 import { useFileManagerStore } from "../state/fileManagerStore";
 
 export function DualPaneLayout() {
@@ -19,6 +19,7 @@ export function DualPaneLayout() {
 
   return (
     <div className="flex h-screen w-screen flex-col bg-gray-50 dark:bg-gray-950">
+      <PlacesBar />
       <div ref={containerRef} className="flex flex-1 overflow-hidden">
         {showLeft && (
           <div
@@ -37,7 +38,6 @@ export function DualPaneLayout() {
         )}
       </div>
       <TransferProgressBar />
-      <Toolbar />
       <Dialog />
       <ContextMenu />
     </div>

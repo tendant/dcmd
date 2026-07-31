@@ -29,6 +29,27 @@ trash = "5"
 # success even when nothing can open the file.
 open = "5"
 
+# Remote browsing. Unix-only, because it drives the system ssh binary — which is
+# the point: ~/.ssh/config, agent, ProxyJump and known_hosts all work without us
+# reimplementing any of it.
+[target.'cfg(unix)'.dependencies.openssh]
+version = "0.11"
+default-features = false
+features = ["native-mux"]
+
+[target.'cfg(unix)'.dependencies.openssh-sftp-client]
+version = "0.15"
+features = ["openssh"]
+
+# ReadDir is a Stream rather than an iterator.
+[target.'cfg(unix)'.dependencies.futures-util]
+version = "0.3"
+default-features = false
+
+[target.'cfg(unix)'.dependencies.tokio]
+version = "1"
+features = ["sync", "process", "io-util", "macros"]
+
 [target.'cfg(unix)'.dependencies]
 # For renamex_np / renameat2: an atomic rename that refuses to clobber, which
 # std does not expose.
@@ -38,8 +59,15 @@ libc = "0.2"
 # MoveFileExW without MOVEFILE_REPLACE_EXISTING, for the same reason.
 windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
 
+[features]
+# The webview inspector. Always available in a debug build; this feature is what
+# puts it in a release build, for diagnosing something that only reproduces
+# there. It ships devtools to users, so it is off by default.
+devtools = ["tauri/devtools"]
+
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

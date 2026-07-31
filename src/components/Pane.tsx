@@ -3,6 +3,7 @@ import { PathBar } from "./PathBar";
 import { FileList } from "./FileList";
 import { ErrorBar } from "./ErrorBar";
 import { ColumnHeaders } from "./ColumnHeaders";
+import { StatusBar } from "./StatusBar";
 
 interface PaneProps {
   paneId: PaneId;
@@ -80,6 +81,8 @@ export function Pane({ paneId }: PaneProps) {
           </button>
         </div>
       )}
+
+      <StatusBar paneId={paneId} />
     </div>
   );
 }

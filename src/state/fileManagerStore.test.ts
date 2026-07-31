@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../tauri/commands", () => ({
   listDirectory: vi.fn(async () => []),
+  listRemoteDirectory: vi.fn(async (_a: string, path: string) => ({ path, entries: [] })),
+  sshConfigHosts: vi.fn(async () => ["alpha", "beta"]),
+  revealEntry: vi.fn(async () => undefined),
   defaultStartDir: vi.fn(async () => "/"),
   openEntry: vi.fn(async () => undefined),
   directorySize: vi.fn(async () => 0),
@@ -13,10 +16,17 @@ vi.mock("../tauri/commands", () => ({
   copyEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
   moveEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
   cancelTransfer: vi.fn(async () => undefined),
+  rsyncTransfer: vi.fn(async () => ({ changes: [], cancelled: false, errors: [] })),
 }));
 
 import * as commands from "../tauri/commands";
-import { entryAtCursor, parentPath, useFileManagerStore, visibleEntries } from "./fileManagerStore";
+import {
+  entryAtCursor,
+  initialCursor,
+  parentPath,
+  useFileManagerStore,
+  visibleEntries,
+} from "./fileManagerStore";
 import type { FileEntry } from "../types/fileEntry";
 
 const entry = (name: string): FileEntry => ({
@@ -921,5 +931,290 @@ describe("bookmarks", () => {
     useFileManagerStore.setState({ panes: { ...s.panes, left: { ...s.panes.left, path: "" } } });
     useFileManagerStore.getState().addBookmark("left");
     expect(useFileManagerStore.getState().bookmarks).toEqual([]);
+  });
+});
+
+describe("remote panes", () => {
+  beforeEach(() => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      remoteCache: {},
+      remotes: [{ name: "Build", alias: "build", startPath: "/home/ci" }],
+      panes: {
+        ...s.panes,
+        left: { ...s.panes.left, remote: null, path: "/local", history: [], historyIndex: -1 },
+      },
+    });
+  });
+
+  it("lists through the remote command once connected", async () => {
+    await useFileManagerStore.getState().connectPane("left", "build");
+    expect(commands.listRemoteDirectory).toHaveBeenCalledWith("build", "/home/ci");
+    expect(commands.listDirectory).not.toHaveBeenCalled();
+    expect(useFileManagerStore.getState().panes.left.remote).toBe("build");
+  });
+
+  it("opens at the host's configured start path", async () => {
+    await useFileManagerStore.getState().connectPane("left", "build");
+    expect(useFileManagerStore.getState().panes.left.path).toBe("/home/ci");
+  });
+
+  it("goes back to the local machine", async () => {
+    await useFileManagerStore.getState().connectPane("left", "build");
+    await useFileManagerStore.getState().connectPane("left", null, "/local");
+    expect(useFileManagerStore.getState().panes.left.remote).toBeNull();
+    expect(commands.listDirectory).toHaveBeenCalledWith("/local");
+  });
+
+  // History belongs to a machine; offering to go "back" to a path that does not
+  // exist on the new one would be worse than useless.
+  it("clears history when switching machines", async () => {
+    await useFileManagerStore.getState().navigate("left", "/local/a");
+    await useFileManagerStore.getState().connectPane("left", "build");
+    expect(useFileManagerStore.getState().canGoBack("left")).toBe(false);
+  });
+
+  describe("the session cache", () => {
+    it("serves a revisited directory without another round trip", async () => {
+      await useFileManagerStore.getState().connectPane("left", "build");
+      await useFileManagerStore.getState().navigate("left", "/home/ci/sub");
+      await useFileManagerStore.getState().navigate("left", "/home/ci");
+      // Two distinct directories, three navigations.
+      expect((commands.listRemoteDirectory as any).mock.calls.length).toBe(2);
+    });
+
+    it("reports how old a cached listing is", async () => {
+      await useFileManagerStore.getState().connectPane("left", "build");
+      const age = useFileManagerStore.getState().listingAge("left");
+      expect(age).not.toBeNull();
+      expect(age).toBeLessThan(1000);
+    });
+
+    it("has no age for a local pane", () => {
+      expect(useFileManagerStore.getState().listingAge("left")).toBeNull();
+    });
+
+    // Refresh is how the user says they do not trust the cache.
+    it("refetches on refresh rather than serving the cache", async () => {
+      await useFileManagerStore.getState().connectPane("left", "build");
+      const before = (commands.listRemoteDirectory as any).mock.calls.length;
+      await useFileManagerStore.getState().refresh("left");
+      expect((commands.listRemoteDirectory as any).mock.calls.length).toBe(before + 1);
+    });
+  });
+});
+
+describe("transfers involving a host", () => {
+  beforeEach(() => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      dialog: null,
+      remoteCache: {},
+      panes: {
+        left: { ...s.panes.left, remote: null, path: "/local", entries: [entry("a.txt")], cursor: 1, selected: new Set(), filter: "", showHidden: false },
+        right: { ...s.panes.right, remote: "build", path: "/srv" },
+      },
+    });
+  });
+
+  // rsync can say exactly what it would do, so the user agrees to a list rather
+  // than to the idea of a transfer.
+  it("previews with a dry run before writing anything", async () => {
+    (commands.rsyncTransfer as any).mockResolvedValueOnce({
+      changes: ["a.txt"], cancelled: false, errors: [],
+    });
+    await useFileManagerStore.getState().requestTransfer("copy");
+
+    const call = (commands.rsyncTransfer as any).mock.calls[0];
+    expect(call[3]).toBe(true); // dryRun
+    const d = useFileManagerStore.getState().dialog as any;
+    expect(d.kind).toBe("rsyncPreview");
+    expect(d.changes).toEqual(["a.txt"]);
+  });
+
+  it("sends the destination host on the destination endpoint", async () => {
+    await useFileManagerStore.getState().requestTransfer("copy");
+    const [, sources, destination] = (commands.rsyncTransfer as any).mock.calls[0];
+    expect(sources).toEqual([{ alias: null, path: "/left/a.txt" }]);
+    expect(destination).toEqual({ alias: "build", path: "/srv" });
+  });
+
+  it("only transfers once the preview is accepted", async () => {
+    await useFileManagerStore.getState().requestTransfer("copy");
+    const afterPreview = (commands.rsyncTransfer as any).mock.calls.length;
+    const d = useFileManagerStore.getState().dialog as any;
+    await useFileManagerStore.getState().runRsync(d.pane, d.sources, d.destination);
+    const calls = (commands.rsyncTransfer as any).mock.calls;
+    expect(calls.length).toBe(afterPreview + 1);
+    expect(calls[calls.length - 1][3]).toBe(false); // not a dry run
+  });
+
+  it("refuses to move to or from a host, and says why", async () => {
+    await useFileManagerStore.getState().requestTransfer("move");
+    expect(commands.rsyncTransfer).not.toHaveBeenCalled();
+    const err = useFileManagerStore.getState().panes.left.error;
+    expect(err?.message).toMatch(/not supported/i);
+    expect(err?.hint).toMatch(/copy/i);
+  });
+
+  it("uses the local path when neither pane is remote", async () => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: { ...s.panes, right: { ...s.panes.right, remote: null } },
+    });
+    await useFileManagerStore.getState().requestTransfer("copy");
+    expect(commands.rsyncTransfer).not.toHaveBeenCalled();
+    expect(commands.checkConflicts).toHaveBeenCalled();
+  });
+
+  it("shows the transfer in the progress bar while it runs", async () => {
+    let seen: any = null;
+    (commands.rsyncTransfer as any).mockImplementationOnce(async () => {
+      seen = useFileManagerStore.getState().transfer;
+      return { changes: [], cancelled: false, errors: [] };
+    });
+    await useFileManagerStore
+      .getState()
+      .runRsync("left", [{ alias: null, path: "/local/a.txt" }], { alias: "build", path: "/srv" });
+    expect(seen).toMatchObject({ pane: "left", total: 1 });
+    expect(useFileManagerStore.getState().transfer).toBeNull();
+  });
+});
+
+describe("adding a host", () => {
+  beforeEach(() => useFileManagerStore.setState({ remotes: [], dialog: null }));
+
+  // Typing an alias by hand is error-prone, and ssh already knows them all.
+  it("offers the hosts from the ssh config", async () => {
+    await useFileManagerStore.getState().requestAddRemote("left");
+    const d = useFileManagerStore.getState().dialog as any;
+    expect(d.kind).toBe("addRemote");
+    expect(d.available).toEqual(["alpha", "beta"]);
+  });
+
+  it("does not offer a host already added", async () => {
+    useFileManagerStore.setState({ remotes: [{ name: "alpha", alias: "alpha", startPath: "~" }] });
+    await useFileManagerStore.getState().requestAddRemote("left");
+    expect((useFileManagerStore.getState().dialog as any).available).toEqual(["beta"]);
+  });
+
+  it("adds one and closes the dialog", async () => {
+    await useFileManagerStore.getState().requestAddRemote("left");
+    useFileManagerStore.getState().addRemote("alpha");
+    const s = useFileManagerStore.getState();
+    expect(s.remotes).toEqual([{ name: "alpha", alias: "alpha", startPath: "." }]);
+    expect(s.dialog).toBeNull();
+  });
+
+  it("ignores a duplicate or an empty alias", () => {
+    const store = useFileManagerStore.getState();
+    store.addRemote("alpha");
+    useFileManagerStore.getState().addRemote("alpha");
+    useFileManagerStore.getState().addRemote("   ");
+    expect(useFileManagerStore.getState().remotes).toHaveLength(1);
+  });
+
+  it("forgets one", () => {
+    useFileManagerStore.getState().addRemote("alpha");
+    useFileManagerStore.getState().removeRemote("alpha");
+    expect(useFileManagerStore.getState().remotes).toEqual([]);
+  });
+});
+
+describe("remote paths the server resolves", () => {
+  beforeEach(() => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      remoteCache: {},
+      remotes: [{ name: "Build", alias: "build", startPath: "." }],
+      panes: { ...s.panes, left: { ...s.panes.left, remote: null, history: [], historyIndex: -1 } },
+    });
+  });
+
+  // Regression: the default was "~", which SFTP looks up as a directory with
+  // that literal name, so connecting failed with "does not exist".
+  it("shows where the server said it landed, not what was asked for", async () => {
+    (commands.listRemoteDirectory as any).mockResolvedValueOnce({
+      path: "/home/ci",
+      entries: [],
+    });
+    await useFileManagerStore.getState().connectPane("left", "build");
+    expect(useFileManagerStore.getState().panes.left.path).toBe("/home/ci");
+  });
+
+  it("caches under the resolved path so returning to it is a hit", async () => {
+    (commands.listRemoteDirectory as any).mockResolvedValueOnce({
+      path: "/home/ci",
+      entries: [],
+    });
+    await useFileManagerStore.getState().connectPane("left", "build");
+    const before = (commands.listRemoteDirectory as any).mock.calls.length;
+    await useFileManagerStore.getState().navigate("left", "/home/ci");
+    expect((commands.listRemoteDirectory as any).mock.calls.length).toBe(before);
+  });
+
+  it("defaults a new host to a path SFTP understands", () => {
+    useFileManagerStore.setState({ remotes: [] });
+    useFileManagerStore.getState().addRemote("newhost");
+    const added = useFileManagerStore.getState().remotes[0];
+    expect(added.startPath).not.toContain("~");
+  });
+});
+
+describe("the cursor in a freshly listed directory", () => {
+  const listed = (names: string[]) =>
+    names.map((n) => ({
+      name: n,
+      path: `/d/${n}`,
+      kind: "file" as const,
+      size: 1,
+      itemCount: null,
+      modifiedAt: null,
+      createdAt: null,
+      hidden: n.startsWith("."),
+    }));
+
+  it("starts on the first entry, not on ..", async () => {
+    vi.mocked(commands.listDirectory).mockResolvedValueOnce(listed(["a", "b"]));
+    await useFileManagerStore.getState().navigate("left", "/d");
+
+    const pane = useFileManagerStore.getState().panes.left;
+    expect(pane.cursor).toBe(1);
+    // The point of it: an operation now has something to act on immediately.
+    expect(entryAtCursor(pane)?.name).toBe("a");
+  });
+
+  it("falls back to .. when the directory is empty", async () => {
+    vi.mocked(commands.listDirectory).mockResolvedValueOnce([]);
+    await useFileManagerStore.getState().navigate("left", "/d");
+
+    const pane = useFileManagerStore.getState().panes.left;
+    expect(pane.cursor).toBe(0);
+    expect(entryAtCursor(pane)).toBeNull();
+  });
+
+  // Every entry hidden is the same situation as an empty directory: there is no
+  // row to sit on, and pointing at one that is not rendered would be worse.
+  it("falls back to .. when everything is filtered out of view", () => {
+    const s = useFileManagerStore.getState();
+    const pane = {
+      ...s.panes.left,
+      entries: listed([".a", ".b"]),
+      showHidden: false,
+      filter: "",
+    };
+    expect(initialCursor(pane)).toBe(0);
+  });
+
+  it("counts the first visible row, not the first listed one", () => {
+    const s = useFileManagerStore.getState();
+    const pane = {
+      ...s.panes.left,
+      entries: listed([".hidden", "visible"]),
+      showHidden: false,
+      filter: "",
+    };
+    expect(initialCursor(pane)).toBe(1);
+    expect(entryAtCursor({ ...pane, cursor: 1 })?.name).toBe("visible");
   });
 });
