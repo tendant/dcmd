@@ -59,6 +59,15 @@ export function App() {
       // reason. Startup is already over its budget before this point.
       await Promise.all([store.navigate("left", startDir), store.navigate("right", startDir)]);
       void commands.markStartup("panes ready");
+      // What the panes actually ended up with. A window that looks empty is
+      // either a pane with no rows or a pane that never loaded, and those need
+      // different fixes.
+      const after = useFileManagerStore.getState().panes;
+      void commands.logMessage(
+        "info",
+        `panes ready: left=${after.left.entries.length} at ${after.left.path}, ` +
+          `right=${after.right.entries.length} at ${after.right.path}`,
+      );
 
       // Persist afterwards, so applying the loaded settings does not itself
       // trigger a write.

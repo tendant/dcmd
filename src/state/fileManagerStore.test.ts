@@ -17,6 +17,8 @@ vi.mock("../tauri/commands", () => ({
   moveEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
   cancelTransfer: vi.fn(async () => undefined),
   rsyncTransfer: vi.fn(async () => ({ changes: [], cancelled: false, errors: [] })),
+  logMessage: vi.fn(async () => undefined),
+  openLog: vi.fn(async () => undefined),
 }));
 
 import * as commands from "../tauri/commands";
@@ -903,7 +905,9 @@ describe("bookmarks", () => {
   it("names a bookmark after its folder", () => {
     useFileManagerStore.getState().addBookmark("left");
     expect(useFileManagerStore.getState().bookmarks).toEqual([
-      { name: "code", path: "/Users/x/code" },
+      // remote is null for a folder on this machine, which is what makes
+      // opening it later come back here.
+      { name: "code", path: "/Users/x/code", remote: null },
     ]);
   });
 
@@ -1216,5 +1220,79 @@ describe("the cursor in a freshly listed directory", () => {
     };
     expect(initialCursor(pane)).toBe(1);
     expect(entryAtCursor({ ...pane, cursor: 1 })?.name).toBe("visible");
+  });
+});
+
+describe("the places bar while a pane is on a remote", () => {
+  beforeEach(() => {
+    // Both panes reset explicitly: the shared beforeEach does not clear
+    // `remote`, so an earlier test leaving a pane connected would make these
+    // pass or fail for reasons that have nothing to do with the places bar.
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      remotes: [{ alias: "build", name: "build", startPath: "/srv" }],
+      bookmarks: [{ name: "docs", path: "/home/me/docs" }],
+      panes: {
+        left: { ...s.panes.left, remote: null, path: "/home/me" },
+        right: { ...s.panes.right, remote: null, path: "/home/me" },
+      },
+    });
+  });
+
+  it("connects only the pane that was clicked", async () => {
+    await useFileManagerStore.getState().connectPane("left", "build");
+    const { panes } = useFileManagerStore.getState();
+    expect(panes.left.remote).toBe("build");
+    expect(panes.right.remote).toBeNull();
+  });
+
+  // A bookmark is a path on a particular machine. Opening a local one from a
+  // pane that is connected to a server has to come back to this machine, not
+  // look for that path over there.
+  it("opens a local bookmark locally, not on the connected host", async () => {
+    const store = useFileManagerStore.getState();
+    await store.connectPane("left", "build");
+    expect(useFileManagerStore.getState().panes.left.remote).toBe("build");
+
+    vi.mocked(commands.listDirectory).mockClear();
+    vi.mocked(commands.listRemoteDirectory).mockClear();
+
+    await store.connectPane("left", null, "/home/me/docs");
+
+    expect(commands.listDirectory).toHaveBeenCalledWith("/home/me/docs");
+    expect(commands.listRemoteDirectory).not.toHaveBeenCalled();
+    expect(useFileManagerStore.getState().panes.left.remote).toBeNull();
+  });
+
+  it("opens a remote bookmark on the host it was taken from", async () => {
+    const store = useFileManagerStore.getState();
+    vi.mocked(commands.listRemoteDirectory).mockClear();
+
+    await store.connectPane("right", "build", "/srv/code");
+
+    expect(commands.listRemoteDirectory).toHaveBeenCalledWith("build", "/srv/code");
+    expect(useFileManagerStore.getState().panes.right.remote).toBe("build");
+  });
+
+  it("records the host when bookmarking a remote folder", async () => {
+    const store = useFileManagerStore.getState();
+    await store.connectPane("left", "build", "/srv/code");
+    useFileManagerStore.getState().addBookmark("left");
+
+    const list = useFileManagerStore.getState().bookmarks;
+    const added = list[list.length - 1];
+    expect(added).toMatchObject({ path: "/srv/code", remote: "build" });
+  });
+
+  // The same path string on two machines is two different places, so one must
+  // not mask the other in the bar.
+  it("treats the same path on a different host as a separate bookmark", async () => {
+    const store = useFileManagerStore.getState();
+    useFileManagerStore.setState({ bookmarks: [{ name: "code", path: "/srv/code", remote: null }] });
+
+    await store.connectPane("left", "build", "/srv/code");
+    useFileManagerStore.getState().addBookmark("left");
+
+    expect(useFileManagerStore.getState().bookmarks).toHaveLength(2);
   });
 });

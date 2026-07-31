@@ -46,6 +46,8 @@ export interface ColumnWidths {
 export interface Bookmark {
   name: string;
   path: string;
+  /** The host this path is on; absent or null means this machine. */
+  remote?: string | null;
 }
 
 export interface Remote {
