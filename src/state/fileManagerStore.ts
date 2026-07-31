@@ -153,7 +153,7 @@ export interface ContextMenuState {
    * Those need their own actions — a bookmark is not a file, and offering to
    * rename or trash one would be nonsense.
    */
-  place?: { kind: "bookmark" | "remote"; id: string };
+  place?: { kind: "bookmark" | "remote" | "bar"; id: string };
 }
 
 export interface FileManagerState {

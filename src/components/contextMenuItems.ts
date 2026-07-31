@@ -261,25 +261,53 @@ export function buildMenuItems(state: FileManagerState, menu: ContextMenuState):
 function placeMenuItems(
   state: FileManagerState,
   menu: ContextMenuState,
-  place: { kind: "bookmark" | "remote"; id: string },
+  place: { kind: "bookmark" | "remote" | "bar"; id: string },
 ): MenuItem[] {
   const here = menu.pane;
   const other: "left" | "right" = here === "left" ? "right" : "left";
+
+  // Right-clicking the bar itself rather than a chip. Adding a host was
+  // otherwise only reachable from the application menu, which is a long way
+  // from the bar the hosts actually live on.
+  if (place.kind === "bar") {
+    return [
+      {
+        kind: "action",
+        label: "Add host…",
+        run: () => void state.requestAddRemote(here),
+      },
+      {
+        kind: "action",
+        label: "Bookmark this folder",
+        disabled: state.isBookmarked(state.panes[here].path),
+        run: () => state.addBookmark(here),
+      },
+      { kind: "separator" },
+      {
+        kind: "action",
+        label: "Hide places bar",
+        run: () => state.togglePlaces(),
+      },
+    ];
+  }
 
   if (place.kind === "bookmark") {
     const bookmark = state.bookmarks.find((b) => b.path === place.id);
     if (!bookmark) return [];
     return [
+      // Through connectPane, like the chip itself: a bookmark records the
+      // machine it is on, and navigate() alone would reuse whatever host the
+      // target pane happens to be connected to.
       {
         kind: "action",
         label: "Open here",
-        run: () => void state.navigate(here, bookmark.path),
+        run: () => void state.connectPane(here, bookmark.remote ?? null, bookmark.path),
       },
       {
         kind: "action",
         label: "Open in other pane",
         shortcut: "Alt-click",
-        run: () => void state.navigate(other, bookmark.path),
+        run: () => void state.connectPane(other, bookmark.remote ?? null, bookmark.path),
       },
       { kind: "separator" },
       {

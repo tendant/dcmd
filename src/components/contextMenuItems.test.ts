@@ -401,3 +401,72 @@ describe("menus for a places-bar chip", () => {
     expect(menuFor("remote", "vanished")).toEqual([]);
   });
 });
+
+describe("the places bar's own menu", () => {
+  const barMenu = () =>
+    buildMenuItems(useFileManagerStore.getState(), {
+      x: 0,
+      y: 0,
+      pane: "left",
+      path: null,
+      place: { kind: "bar", id: "" },
+    });
+
+  it("offers to add a host, next to where hosts are shown", () => {
+    expect(barMenu().map((i) => ("label" in i ? i.label : "—"))).toContain("Add host…");
+  });
+
+  it("offers to bookmark the folder the pane is on", () => {
+    expect(barMenu().map((i) => ("label" in i ? i.label : "—"))).toContain(
+      "Bookmark this folder",
+    );
+  });
+
+  // Nothing about a chip, because no chip was clicked.
+  it("says nothing about removing or connecting", () => {
+    const labels = barMenu().map((i) => ("label" in i ? i.label : "—"));
+    expect(labels).not.toContain("Remove bookmark");
+    expect(labels).not.toContain("Connect here");
+  });
+});
+
+describe("opening a bookmark from its chip menu", () => {
+  const connectPane = vi.fn();
+
+  beforeEach(() => {
+    useFileManagerStore.setState({
+      connectPane,
+      bookmarks: [
+        { name: "docs", path: "/home/me/docs", remote: null },
+        { name: "src", path: "/srv/src", remote: "build" },
+      ],
+    } as any);
+  });
+
+  // The third place this bug lived: the chip, the number shortcut, and here.
+  it("returns to this machine for a local bookmark", () => {
+    const items = buildMenuItems(useFileManagerStore.getState(), {
+      x: 0,
+      y: 0,
+      pane: "left",
+      path: null,
+      place: { kind: "bookmark", id: "/home/me/docs" },
+    });
+    const open = items.find((i) => "label" in i && i.label === "Open here");
+    (open as { run: () => void }).run();
+    expect(connectPane).toHaveBeenCalledWith("left", null, "/home/me/docs");
+  });
+
+  it("goes back to the host a remote bookmark was taken on", () => {
+    const items = buildMenuItems(useFileManagerStore.getState(), {
+      x: 0,
+      y: 0,
+      pane: "left",
+      path: null,
+      place: { kind: "bookmark", id: "/srv/src" },
+    });
+    const open = items.find((i) => "label" in i && i.label === "Open in other pane");
+    (open as { run: () => void }).run();
+    expect(connectPane).toHaveBeenCalledWith("right", "build", "/srv/src");
+  });
+});

@@ -114,6 +114,29 @@ describe("opening a place by number", () => {
   });
 });
 
+describe("right-clicking the bar itself", () => {
+  const openContextMenu = vi.fn();
+  beforeEach(() => useFileManagerStore.setState({ openContextMenu } as any));
+
+  it("offers the bar's own actions, not a chip's", () => {
+    const { container } = render(<PlacesBar />);
+    fireEvent.contextMenu(container.firstChild as HTMLElement);
+    expect(openContextMenu).toHaveBeenCalledWith(
+      expect.objectContaining({ place: { kind: "bar", id: "" } }),
+    );
+  });
+
+  // Otherwise right-clicking a chip would give the bar's menu instead of the
+  // one for that bookmark or host.
+  it("does not fire when a chip was the target", () => {
+    render(<PlacesBar />);
+    fireEvent.contextMenu(screen.getByRole("button", { name: /Code/ }));
+    expect(openContextMenu).toHaveBeenCalledWith(
+      expect.objectContaining({ place: { kind: "bookmark", id: "/c" } }),
+    );
+  });
+});
+
 describe("right-clicking a chip", () => {
   const openContextMenu = vi.fn();
   beforeEach(() => useFileManagerStore.setState({ openContextMenu } as any));

@@ -24,7 +24,7 @@ export function PlacesBar() {
   const target = (e: React.MouseEvent): PaneId =>
     e.altKey ? (activePane === "left" ? "right" : "left") : activePane;
 
-  const menuFor = (kind: "bookmark" | "remote", id: string) => (e: React.MouseEvent) => {
+  const menuFor = (kind: "bookmark" | "remote" | "bar", id: string) => (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     openContextMenu({ x: e.clientX, y: e.clientY, pane: activePane, path: null, place: { kind, id } });
@@ -36,7 +36,9 @@ export function PlacesBar() {
   return (
     <div
       className="flex items-center gap-1.5 overflow-x-auto border-b border-gray-300 bg-gray-100 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-      title="Click to open in the active pane, Alt-click for the other one"
+      title="Click to open in the active pane, Alt-click for the other one. Right-click for more."
+      // Chips stop propagation, so reaching here means the empty part of the bar.
+      onContextMenu={menuFor("bar", "")}
     >
       {bookmarks.map((b, i) => (
         <button
