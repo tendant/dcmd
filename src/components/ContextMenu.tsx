@@ -113,16 +113,50 @@ export function ContextMenu() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [menu, close]);
 
+  useEffect(() => {
+    if (!menu) return;
+    // Anything that moves the ground under the menu dismisses it. It is placed
+    // against the viewport at one instant, so after a resize it points at
+    // whatever now happens to be there; and switching away to another app or to
+    // the native menubar leaves it floating over an app that is no longer
+    // listening to it.
+    window.addEventListener("blur", close);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("blur", close);
+      window.removeEventListener("resize", close);
+    };
+  }, [menu, close]);
+
   if (!menu) return null;
   const items = buildMenuItems(useFileManagerStore.getState(), menu);
 
   return (
-    <div className="fixed inset-0 z-40" onClick={close} onContextMenu={(e) => e.preventDefault()}>
+    <div
+      className="fixed inset-0 z-40"
+      // On press rather than click: pressing outside and releasing inside is
+      // never a click, so the menu used to survive a press-and-drag dismissal.
+      onPointerDown={close}
+      onClick={close}
+      // Right-clicking elsewhere has to dismiss it too. Suppressing the webview
+      // menu without closing ours left it stuck, and because the overlay covers
+      // the window, the next right-click could not reach anything either.
+      onContextMenu={(e) => {
+        e.preventDefault();
+        close();
+      }}
+    >
       <div
         ref={ref}
         role="menu"
         aria-label="Actions"
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
+        onContextMenu={(e) => {
+          // Inside the menu, suppress the webview's menu but keep ours open.
+          e.preventDefault();
+          e.stopPropagation();
+        }}
         style={{
           left: pos?.left ?? menu.x,
           top: pos?.top ?? menu.y,

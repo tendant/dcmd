@@ -116,6 +116,43 @@ describe("ContextMenu", () => {
     expect(parseFloat(menu.style.top)).toBeLessThan(99999);
   });
 
+  // Every way out of the menu, because each of these left it stuck on screen
+  // with the app underneath still responding to nothing.
+  it("closes on a right-click somewhere else", () => {
+    openAt();
+    const { container } = render(<ContextMenu />);
+    const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    (container.firstChild as HTMLElement).dispatchEvent(ev);
+    expect(useFileManagerStore.getState().contextMenu).toBeNull();
+  });
+
+  it("closes when the window loses focus", () => {
+    openAt();
+    render(<ContextMenu />);
+    window.dispatchEvent(new Event("blur"));
+    expect(useFileManagerStore.getState().contextMenu).toBeNull();
+  });
+
+  // It is positioned against the viewport, so a resize leaves it somewhere
+  // that no longer relates to what was clicked.
+  it("closes when the window is resized", () => {
+    openAt();
+    render(<ContextMenu />);
+    window.dispatchEvent(new Event("resize"));
+    expect(useFileManagerStore.getState().contextMenu).toBeNull();
+  });
+
+  // Pressing outside and releasing inside is not a click, so a menu dismissed
+  // by press-and-drag used to survive.
+  it("closes on press, not only on a completed click", () => {
+    openAt();
+    const { container } = render(<ContextMenu />);
+    (container.firstChild as HTMLElement).dispatchEvent(
+      new MouseEvent("pointerdown", { bubbles: true }),
+    );
+    expect(useFileManagerStore.getState().contextMenu).toBeNull();
+  });
+
   it("suppresses the webview menu on top of itself", () => {
     openAt();
     const { container } = render(<ContextMenu />);
