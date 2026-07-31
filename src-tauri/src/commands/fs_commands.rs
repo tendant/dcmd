@@ -227,6 +227,85 @@ pub async fn move_entries_with(
     .await
 }
 
+/// Host aliases from the user's ssh config, offered when adding a host.
+///
+/// Read-only, and only the names. Typing an alias by hand is error-prone and the
+/// list already exists; the app has no business duplicating what ssh knows.
+#[tauri::command]
+pub async fn ssh_config_hosts() -> Result<Vec<String>, FsError> {
+    tauri::async_runtime::spawn_blocking(|| {
+        Ok(crate::remote::ssh_config::default_config_path()
+            .map(|p| crate::remote::ssh_config::hosts_from_file(&p))
+            .unwrap_or_default())
+    })
+    .await
+    .map_err(|e| FsError::Io(format!("task join error: {e}")))?
+}
+
+/// Transfers between this machine and a host, using rsync.
+///
+/// rsync rather than our own copy: it preserves metadata, resumes, skips what is
+/// already identical, and can say in advance what it would change. Reimplementing
+/// any of that over SFTP would be worse in every respect.
+#[cfg(unix)]
+#[tauri::command]
+pub async fn rsync_transfer(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Transfers>,
+    id: String,
+    sources: Vec<crate::remote::rsync::Endpoint>,
+    destination: crate::remote::rsync::Endpoint,
+    dry_run: bool,
+) -> Result<crate::remote::rsync::RsyncReport, FsError> {
+    use crate::remote::rsync;
+
+    rsync::check_local_destination(&destination)?;
+    let args = rsync::build_args(&sources, &destination, dry_run)?;
+
+    let cancel = Arc::new(AtomicBool::new(false));
+    state
+        .0
+        .lock()
+        .unwrap()
+        .insert(id.clone(), Arc::clone(&cancel));
+
+    let progress_id = id.clone();
+    let result = rsync::run_rsync(&args, &cancel, move |p| {
+        let _ = app.emit(
+            "transfer://progress",
+            TransferProgress {
+                id: progress_id.clone(),
+                // rsync counts files when it can; fall back to its byte
+                // percentage so the bar still moves during one large file.
+                current: if p.total > 0 {
+                    p.done
+                } else {
+                    p.percent as usize
+                },
+                total: if p.total > 0 { p.total } else { 100 },
+                name: String::new(),
+            },
+        );
+    })
+    .await;
+
+    state.0.lock().unwrap().remove(&id);
+    result
+}
+
+#[cfg(not(unix))]
+#[tauri::command]
+pub async fn rsync_transfer(
+    _id: String,
+    _sources: Vec<crate::remote::rsync::Endpoint>,
+    _destination: crate::remote::rsync::Endpoint,
+    _dry_run: bool,
+) -> Result<crate::remote::rsync::RsyncReport, FsError> {
+    Err(FsError::Io(
+        "Remote transfers are not available on this platform".to_string(),
+    ))
+}
+
 /// Signals an in-flight transfer to stop. No-op if it already finished.
 #[tauri::command]
 pub async fn cancel_transfer(
@@ -273,6 +352,42 @@ pub async fn open_entry(path: String) -> Result<(), FsError> {
     })
     .await
     .map_err(|e| FsError::Io(format!("task join error: {e}")))?
+}
+
+/// Lists a directory on a remote host over SFTP.
+///
+/// Remote browsing is read-only plus rsync by design, so this is the only remote
+/// command that touches a listing. Nothing here can modify the far side.
+#[cfg(unix)]
+#[tauri::command]
+pub async fn list_remote_directory(
+    alias: String,
+    path: String,
+    connections: tauri::State<'_, crate::remote::session::Connections>,
+) -> Result<crate::remote::session::RemoteListing, FsError> {
+    let sftp = connections.get(&alias, None).await?;
+    match crate::remote::session::list_dir(&sftp, &path).await {
+        Ok(listing) => Ok(listing),
+        Err(e) => {
+            // A dead session would otherwise fail every later listing too; drop
+            // it so the next attempt reconnects rather than reusing a corpse.
+            if matches!(e, FsError::Io(_)) {
+                connections.disconnect(&alias).await;
+            }
+            Err(e)
+        }
+    }
+}
+
+/// Windows has no ssh multiplexing to build on, so remote browsing is not
+/// available there. Reported plainly rather than the command being absent, which
+/// would surface as an unhelpful "command not found".
+#[cfg(not(unix))]
+#[tauri::command]
+pub async fn list_remote_directory(_alias: String, _path: String) -> Result<(), FsError> {
+    Err(FsError::Io(
+        "Remote browsing is not available on this platform".to_string(),
+    ))
 }
 
 /// Shows the entry in the OS file browser.

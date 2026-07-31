@@ -48,12 +48,20 @@ export interface Bookmark {
   path: string;
 }
 
+export interface Remote {
+  name: string;
+  alias: string;
+  startPath: string;
+}
+
 export interface Settings {
   version: number;
   splitRatio: number;
+  showPlaces: boolean;
   left: PaneSettings;
   right: PaneSettings;
   bookmarks: Bookmark[];
+  remotes: Remote[];
 }
 
 export interface StartupInfo {
@@ -69,6 +77,20 @@ export const saveSettings = (settings: Settings): Promise<void> =>
 
 export const markStartup = (label: string): Promise<void> =>
   invoke<void>("mark_startup", { label });
+
+/** Lists a directory on a saved SSH host. Read-only; nothing here can modify it. */
+/** Host aliases from ~/.ssh/config, offered when adding a host. */
+export const sshConfigHosts = (): Promise<string[]> => invoke<string[]>("ssh_config_hosts");
+
+export interface RemoteListing {
+  /** The path the request actually resolved to: "~" is not a thing over SFTP. */
+  path: string;
+  entries: FileEntry[];
+}
+
+/** Lists a directory on a saved SSH host. Read-only; nothing here can modify it. */
+export const listRemoteDirectory = (alias: string, path: string): Promise<RemoteListing> =>
+  invoke<RemoteListing>("list_remote_directory", { alias, path });
 
 export const listDirectory = (path: string): Promise<FileEntry[]> =>
   invoke<FileEntry[]>("list_directory", { path });
@@ -126,5 +148,41 @@ export const moveEntriesWith = (
 ): Promise<TransferReport> =>
   invoke<TransferReport>("move_entries_with", { id, sources, destinationDir, policy });
 
+export interface RsyncEndpoint {
+  alias: string | null;
+  path: string;
+}
+
+export interface RsyncReport {
+  changes: string[];
+  cancelled: boolean;
+  errors: string[];
+}
+
+/** Transfers between this machine and a host. `dryRun` reports without writing. */
+export const rsyncTransfer = (
+  id: string,
+  sources: RsyncEndpoint[],
+  destination: RsyncEndpoint,
+  dryRun: boolean,
+): Promise<RsyncReport> =>
+  invoke<RsyncReport>("rsync_transfer", { id, sources, destination, dryRun });
+
 export const cancelTransfer = (id: string): Promise<void> =>
   invoke<void>("cancel_transfer", { id });
+
+/** Opens the app's log file in the system's default viewer. */
+export async function openLog(): Promise<void> {
+  return invoke("open_log");
+}
+
+/**
+ * Appends a line to the app's log file.
+ *
+ * The webview console is not readable in a release build and the dev terminal
+ * carries only vite's own output, so this is the only place a frontend message
+ * survives long enough to be read.
+ */
+export async function logMessage(level: string, message: string): Promise<void> {
+  return invoke("log_message", { level, message });
+}

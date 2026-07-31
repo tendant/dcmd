@@ -7,7 +7,9 @@ export function settingsFrom(state: FileManagerState): Settings {
   return {
     version: 2,
     splitRatio: state.splitRatio,
+    showPlaces: state.showPlaces,
     bookmarks: state.bookmarks,
+    remotes: state.remotes,
     left: {
       sortKey: state.panes.left.sort.key,
       sortAscending: state.panes.left.sort.ascending,

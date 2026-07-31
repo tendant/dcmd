@@ -50,6 +50,7 @@ async function copyToClipboard(text: string): Promise<void> {
  */
 export function buildMenuItems(state: FileManagerState, menu: ContextMenuState): MenuItem[] {
   const { pane } = menu;
+  if (menu.place) return placeMenuItems(state, menu, menu.place);
   const paneState = state.panes[pane];
   const target: FileEntry | null =
     (menu.path && visibleEntries(paneState).find((e) => e.path === menu.path)) || null;
@@ -90,6 +91,44 @@ export function buildMenuItems(state: FileManagerState, menu: ContextMenuState):
     },
     { kind: "action", label: "Refresh", shortcut: `${MOD}R`, run: () => state.refresh(pane) },
     { kind: "separator" },
+    ...(true
+      ? [
+          {
+            kind: "submenu" as const,
+            label: "Connect to",
+            items: [
+              {
+                kind: "action" as const,
+                label: "Add host…",
+                run: () => void state.requestAddRemote(pane),
+              },
+              ...(paneState.remote
+                ? [
+                    {
+                      kind: "action" as const,
+                      label: `Forget “${paneState.remote}”`,
+                      run: () => state.removeRemote(paneState.remote!),
+                    },
+                  ]
+                : []),
+              { kind: "separator" as const },
+              {
+                kind: "action" as const,
+                label: "This machine",
+                disabled: !paneState.remote,
+                run: () => void state.connectPane(pane, null, "/"),
+              },
+              ...(state.remotes.length > 0 ? [{ kind: "separator" as const }] : []),
+              ...state.remotes.map((r) => ({
+                kind: "action" as const,
+                label: r.name || r.alias,
+                disabled: paneState.remote === r.alias,
+                run: () => void state.connectPane(pane, r.alias),
+              })),
+            ],
+          },
+        ]
+      : []),
     {
       kind: "submenu",
       label: "Bookmarks",
@@ -209,6 +248,83 @@ export function buildMenuItems(state: FileManagerState, menu: ContextMenuState):
       run: () => void state.revealEntry(pane, target.path),
     },
     ...common,
+  ];
+}
+
+/**
+ * Menu for a chip in the places bar.
+ *
+ * Both kinds offer the same first choice — open here, or in the other pane —
+ * because lining up two locations is what the second pane is for, and the bar is
+ * the fastest way to do it.
+ */
+function placeMenuItems(
+  state: FileManagerState,
+  menu: ContextMenuState,
+  place: { kind: "bookmark" | "remote"; id: string },
+): MenuItem[] {
+  const here = menu.pane;
+  const other: "left" | "right" = here === "left" ? "right" : "left";
+
+  if (place.kind === "bookmark") {
+    const bookmark = state.bookmarks.find((b) => b.path === place.id);
+    if (!bookmark) return [];
+    return [
+      {
+        kind: "action",
+        label: "Open here",
+        run: () => void state.navigate(here, bookmark.path),
+      },
+      {
+        kind: "action",
+        label: "Open in other pane",
+        shortcut: "Alt-click",
+        run: () => void state.navigate(other, bookmark.path),
+      },
+      { kind: "separator" },
+      {
+        kind: "action",
+        label: "Remove bookmark",
+        danger: true,
+        run: () => state.removeBookmark(bookmark.path),
+      },
+    ];
+  }
+
+  const remote = state.remotes.find((r) => r.alias === place.id);
+  if (!remote) return [];
+  const connectedHere = state.panes[here].remote === remote.alias;
+  return [
+    {
+      kind: "action",
+      label: "Connect here",
+      disabled: connectedHere,
+      run: () => void state.connectPane(here, remote.alias),
+    },
+    {
+      kind: "action",
+      label: "Connect in other pane",
+      shortcut: "Alt-click",
+      disabled: state.panes[other].remote === remote.alias,
+      run: () => void state.connectPane(other, remote.alias),
+    },
+    ...(connectedHere
+      ? [
+          {
+            kind: "action" as const,
+            label: "Back to this machine",
+            run: () => void state.connectPane(here, null, "/"),
+          },
+        ]
+      : []),
+    { kind: "separator" },
+    {
+      kind: "action",
+      // Only the saved entry goes; nothing on the host is touched.
+      label: `Forget “${remote.name || remote.alias}”`,
+      danger: true,
+      run: () => state.removeRemote(remote.alias),
+    },
   ];
 }
 

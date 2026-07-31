@@ -151,3 +151,42 @@ describe("right-clicking the '..' row", () => {
     expect(menu?.path).toBeNull();
   });
 });
+
+/**
+ * The visible end of the arrow keys. Every other test here renders with
+ * isCursor={false}, so the highlight itself — the only thing that tells you
+ * where the cursor is — was drawn by code no test had ever exercised.
+ */
+describe("the cursor highlight", () => {
+  const row = (over: { isCursor: boolean; isSelected?: boolean }) =>
+    render(
+      <FileRow
+        entry={entry("a.txt")}
+        paneId="left"
+        isSelected={over.isSelected ?? false}
+        isCursor={over.isCursor}
+        isRenaming={false}
+        index={1}
+      />,
+    ).container.firstElementChild as HTMLElement;
+
+  it("marks the row under the cursor", () => {
+    expect(row({ isCursor: true }).className).toContain("border-l-blue-600");
+  });
+
+  it("leaves other rows unmarked", () => {
+    expect(row({ isCursor: false }).className).not.toContain("border-l-blue-600");
+  });
+
+  // A row can be both. The cursor has to stay visible on it, or moving through
+  // a selection would look like the cursor had vanished.
+  it("stays visible on a row that is also selected", () => {
+    expect(row({ isCursor: true, isSelected: true }).className).toContain("border-l-blue-600");
+  });
+
+  it("styles a selected row differently from the cursor row", () => {
+    const selected = row({ isCursor: false, isSelected: true }).className;
+    expect(selected).toContain("bg-blue-100");
+    expect(selected).not.toContain("border-l-blue-600");
+  });
+});

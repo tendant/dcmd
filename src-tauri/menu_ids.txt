@@ -1,0 +1,38 @@
+# Canonical menu item ids, one per line. Both sides are checked against this
+# file, so changing an id here fails a Rust test until the menu is updated, and
+# fails a TypeScript test until the frontend handler is. Editing one side alone
+# would otherwise produce a menu item that silently does nothing.
+new_folder
+rename
+open
+copy
+move
+reveal
+copy_path
+trash
+back
+forward
+up
+edit_path
+refresh
+bookmark
+add_host
+open_log
+switch_pane
+select_all
+deselect_all
+invert_selection
+calc_size
+clear_filter
+cancel
+sort_name
+sort_size
+sort_modified
+sort_created
+sort_kind
+toggle_hidden
+toggle_places
+split_even
+split_wider
+split_narrower
+toggle_collapse

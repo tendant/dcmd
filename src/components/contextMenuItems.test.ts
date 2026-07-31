@@ -35,8 +35,13 @@ function seed(selected: string[] = []) {
         showHidden: false,
         sort: { key: "name", ascending: true },
         dirSizes: {},
+        // Reset every field a test could dirty: the store is module-level, so
+        // anything left set here leaks into the next test.
+        remote: null,
+        history: [],
+        historyIndex: -1,
       },
-      right: { ...s.panes.right, path: "/right" },
+      right: { ...s.panes.right, path: "/right", remote: null },
     },
   });
 }
@@ -308,5 +313,91 @@ describe("history in the menu", () => {
       },
     });
     expect((find(folderMenu(), "Back") as any).disabled).toBe(false);
+  });
+});
+
+describe("menus for a places-bar chip", () => {
+  const menuFor = (kind: "bookmark" | "remote", id: string) =>
+    buildMenuItems(useFileManagerStore.getState(), {
+      x: 0,
+      y: 0,
+      pane: "left",
+      path: null,
+      place: { kind, id },
+    });
+
+  beforeEach(() => {
+    seed();
+    useFileManagerStore.setState({
+      bookmarks: [{ name: "Code", path: "/c" }],
+      remotes: [{ name: "Build", alias: "build", startPath: "." }],
+    });
+  });
+
+  describe("a bookmark", () => {
+    it("offers to open it in either pane", () => {
+      const l = labels(menuFor("bookmark", "/c"));
+      expect(l).toContain("Open here");
+      expect(l).toContain("Open in other pane");
+    });
+
+    it("opens in the other pane on request", () => {
+      const spy = vi.fn();
+      useFileManagerStore.setState({ navigate: spy as any });
+      (find(menuFor("bookmark", "/c"), "Open in other") as any).run();
+      expect(spy).toHaveBeenCalledWith("right", "/c");
+    });
+
+    it("offers removal, marked as destructive", () => {
+      const item = find(menuFor("bookmark", "/c"), "Remove bookmark") as any;
+      expect(item.danger).toBe(true);
+      item.run();
+      expect(useFileManagerStore.getState().bookmarks).toEqual([]);
+    });
+
+    // A bookmark is not a file; renaming or trashing one is meaningless.
+    it("offers nothing that belongs to a file", () => {
+      const l = labels(menuFor("bookmark", "/c")).join("|");
+      for (const absent of ["Rename", "Trash", "Copy path", "Calculate size"]) {
+        expect(l).not.toContain(absent);
+      }
+    });
+  });
+
+  describe("a host", () => {
+    it("offers to connect either pane", () => {
+      const l = labels(menuFor("remote", "build"));
+      expect(l).toContain("Connect here");
+      expect(l).toContain("Connect in other pane");
+    });
+
+    it("disables connecting where it is already connected", () => {
+      const s = useFileManagerStore.getState();
+      useFileManagerStore.setState({
+        panes: { ...s.panes, left: { ...s.panes.left, remote: "build" } },
+      });
+      expect((find(menuFor("remote", "build"), "Connect here") as any).disabled).toBe(true);
+    });
+
+    it("offers a way back to the local machine only when connected", () => {
+      expect(labels(menuFor("remote", "build")).join("|")).not.toContain("Back to this machine");
+      const s = useFileManagerStore.getState();
+      useFileManagerStore.setState({
+        panes: { ...s.panes, left: { ...s.panes.left, remote: "build" } },
+      });
+      expect(labels(menuFor("remote", "build")).join("|")).toContain("Back to this machine");
+    });
+
+    it("forgets the saved host without touching anything on it", () => {
+      const item = find(menuFor("remote", "build"), "Forget") as any;
+      expect(item.danger).toBe(true);
+      item.run();
+      expect(useFileManagerStore.getState().remotes).toEqual([]);
+    });
+  });
+
+  it("shows nothing for a chip that has since gone", () => {
+    expect(menuFor("bookmark", "/vanished")).toEqual([]);
+    expect(menuFor("remote", "vanished")).toEqual([]);
   });
 });
