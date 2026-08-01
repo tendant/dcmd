@@ -26,6 +26,7 @@ export const MENU_ACTIONS: Record<string, (s: FileManagerState) => void> = {
     if (entry) void navigator.clipboard.writeText(entry.path).catch(() => {});
   },
   trash: (s) => s.requestTrash(s.activePane),
+  preview: (s) => void s.openPreview(s.activePane),
   open: (s) => {
     const pane = s.panes[s.activePane];
     // Same three-way meaning Enter has, since this is the menu's version of it.

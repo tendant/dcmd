@@ -5,6 +5,7 @@
 new_folder
 rename
 open
+preview
 copy
 move
 reveal

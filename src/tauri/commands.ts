@@ -188,3 +188,20 @@ export async function openLog(): Promise<void> {
 export async function logMessage(level: string, message: string): Promise<void> {
   return invoke("log_message", { level, message });
 }
+
+/**
+ * What a file looks like for read-only display.
+ *
+ * A discriminated union rather than a blob with optional fields, so the UI has
+ * to handle each case and cannot render an image as if it were text.
+ */
+export type Preview =
+  | { kind: "text"; content: string; truncated: boolean }
+  | { kind: "markdown"; content: string; truncated: boolean }
+  | { kind: "image"; mime: string; data: string }
+  | { kind: "pdf"; data: string }
+  | { kind: "unsupported"; reason: string };
+
+export async function previewFile(path: string): Promise<Preview> {
+  return invoke("preview_file", { path });
+}

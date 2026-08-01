@@ -4,6 +4,7 @@ mod fs;
 pub mod logging;
 pub mod menu;
 mod operations;
+pub mod preview;
 pub mod remote;
 pub mod settings;
 
@@ -79,6 +80,7 @@ pub fn run() {
             commands::check_conflicts,
             commands::cancel_transfer,
             commands::trash_entries,
+            preview::preview_file,
             logging::log_message,
             logging::open_log,
         ])

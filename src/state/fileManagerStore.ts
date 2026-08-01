@@ -69,6 +69,18 @@ export interface PaneState {
  * because it blocks interaction with both, and kept in the store rather than using
  * window.confirm so it can name the files involved and be styled.
  */
+/**
+ * A file open for read-only viewing. `content` is null while it is being read,
+ * so the overlay can appear immediately rather than after the file has loaded —
+ * a large image would otherwise look like a dead keypress.
+ */
+export interface PreviewState {
+  path: string;
+  name: string;
+  content: commands.Preview | null;
+  error: string | null;
+}
+
 export type DialogState =
   | {
       kind: "conflict";
@@ -184,6 +196,12 @@ export interface FileManagerState {
    * go stale if the listing refreshes underneath it. */
   contextMenu: ContextMenuState | null;
   dialog: DialogState | null;
+  /**
+   * The file being previewed, if any. Separate from `dialog`, which is for
+   * decisions that need an answer before anything can continue — a viewer is
+   * not one of those, even though both take over the keyboard while open.
+   */
+  preview: PreviewState | null;
   transfer: ActiveTransfer | null;
 
   setActivePane: (pane: PaneId) => void;
@@ -275,6 +293,8 @@ export interface FileManagerState {
   /** Opens the delete confirmation, which names what it will remove. */
   requestTrash: (pane: PaneId) => void;
   dismissDialog: () => void;
+  openPreview: (pane: PaneId) => Promise<void>;
+  closePreview: () => void;
   setTransferProgress: (p: commands.TransferProgress) => void;
   cancelTransfer: () => void;
 }
@@ -829,6 +849,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   },
 
   dialog: null,
+  preview: null,
   transfer: null,
 
   setTransferProgress: (p) =>
@@ -848,6 +869,48 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   },
 
   dismissDialog: () => set({ dialog: null }),
+
+  openPreview: async (pane) => {
+    const state = get();
+    const paneState = state.panes[pane];
+
+    // Reading a file over SFTP is its own piece of work, and guessing at it
+    // here would mean either a hang or a wrong error.
+    if (paneState.remote) {
+      set({
+        preview: {
+          path: paneState.path,
+          name: paneState.remote,
+          content: null,
+          error: "Preview is not available for files on a host yet.",
+        },
+      });
+      return;
+    }
+
+    const entry = entryAtCursor(paneState);
+    // The ".." row resolves to null, and a directory has nothing to show; both
+    // are ordinary things to press F3 on by accident, so neither is an error.
+    if (!entry || entry.kind === "directory") return;
+
+    set({ preview: { path: entry.path, name: entry.name, content: null, error: null } });
+
+    try {
+      const content = await commands.previewFile(entry.path);
+      // The cursor may have moved on, or the overlay been closed, while a large
+      // file was being read. Only apply the result if it is still wanted.
+      set((s2) =>
+        s2.preview?.path === entry.path ? { preview: { ...s2.preview, content } } : {},
+      );
+    } catch (err) {
+      const message = toAppError(err, "preview").message;
+      set((s2) =>
+        s2.preview?.path === entry.path ? { preview: { ...s2.preview, error: message } } : {},
+      );
+    }
+  },
+
+  closePreview: () => set({ preview: null }),
 
   runRsync: async (pane, sources, destination) => {
     const state = get();

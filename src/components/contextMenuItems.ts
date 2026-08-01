@@ -189,6 +189,18 @@ export function buildMenuItems(state: FileManagerState, menu: ContextMenuState):
           ? state.navigate(pane, target.path)
           : state.openEntry(pane, target.path),
     },
+    // Not offered for a folder: there is nothing to read, and a disabled item
+    // for every directory would be noise on the commonest right-click there is.
+    ...(target.kind === "directory"
+      ? []
+      : [
+          {
+            kind: "action" as const,
+            label: "Preview",
+            shortcut: "F3",
+            run: () => void state.openPreview(pane),
+          },
+        ]),
     {
       kind: "action",
       label: "Show in other pane",

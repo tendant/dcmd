@@ -28,6 +28,7 @@ pub mod ids {
     pub const COPY_PATH: &str = "copy_path";
     pub const TRASH: &str = "trash";
     pub const OPEN: &str = "open";
+    pub const PREVIEW: &str = "preview";
     pub const BACK: &str = "back";
     pub const FORWARD: &str = "forward";
     pub const UP: &str = "up";
@@ -66,6 +67,7 @@ pub mod ids {
         NEW_FOLDER,
         RENAME,
         OPEN,
+        PREVIEW,
         COPY,
         MOVE,
         REVEAL,
@@ -127,6 +129,10 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         // row, so it cannot be one fixed command. The key is in the label
         // instead, which is the discoverability the shortcut bar used to give.
         .item(&item(ids::OPEN, "Open  (Enter)", None)?)
+        // Unlike Enter, this means one fixed thing whatever the row is, so the
+        // menu can own the key outright and the keyboard handler stays clear of
+        // it. F3 is the view key this class of app has used for decades.
+        .item(&item(ids::PREVIEW, "Preview", Some("F3"))?)
         .separator()
         .item(&item(
             ids::NEW_FOLDER,

@@ -12,3 +12,71 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Rendered Markdown in the preview.
+   Tailwind's reset flattens headings and lists, which is right everywhere else
+   in this app — every other surface is chrome. Here the document is the
+   content, so the defaults have to be put back by hand. Scoped to the preview
+   so nothing else inherits them. */
+.preview-markdown h1,
+.preview-markdown h2,
+.preview-markdown h3 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.2em 0 0.5em;
+}
+.preview-markdown h1 { font-size: 1.6em; }
+.preview-markdown h2 { font-size: 1.3em; }
+.preview-markdown h3 { font-size: 1.1em; }
+.preview-markdown p,
+.preview-markdown ul,
+.preview-markdown ol,
+.preview-markdown blockquote,
+.preview-markdown table { margin: 0.75em 0; }
+.preview-markdown ul { list-style: disc; padding-left: 1.5em; }
+.preview-markdown ol { list-style: decimal; padding-left: 1.5em; }
+.preview-markdown a { color: #2563eb; text-decoration: underline; }
+.preview-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background: rgb(0 0 0 / 6%);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+}
+.preview-markdown pre {
+  background: rgb(0 0 0 / 6%);
+  border-radius: 6px;
+  padding: 0.75em;
+  overflow-x: auto;
+}
+.preview-markdown pre code { background: none; padding: 0; }
+.preview-markdown blockquote {
+  border-left: 3px solid rgb(0 0 0 / 15%);
+  padding-left: 0.9em;
+  color: rgb(0 0 0 / 60%);
+}
+.preview-markdown table { border-collapse: collapse; }
+.preview-markdown th,
+.preview-markdown td {
+  border: 1px solid rgb(0 0 0 / 15%);
+  padding: 0.3em 0.6em;
+}
+.preview-markdown img { max-width: 100%; }
+.preview-markdown hr {
+  border: 0;
+  border-top: 1px solid rgb(0 0 0 / 15%);
+  margin: 1.2em 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .preview-markdown a { color: #93c5fd; }
+  .preview-markdown code,
+  .preview-markdown pre { background: rgb(255 255 255 / 8%); }
+  .preview-markdown blockquote {
+    border-left-color: rgb(255 255 255 / 20%);
+    color: rgb(255 255 255 / 65%);
+  }
+  .preview-markdown th,
+  .preview-markdown td,
+  .preview-markdown hr { border-color: rgb(255 255 255 / 15%); }
+}

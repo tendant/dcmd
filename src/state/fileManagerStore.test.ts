@@ -19,6 +19,7 @@ vi.mock("../tauri/commands", () => ({
   rsyncTransfer: vi.fn(async () => ({ changes: [], cancelled: false, errors: [] })),
   logMessage: vi.fn(async () => undefined),
   openLog: vi.fn(async () => undefined),
+  previewFile: vi.fn(async () => ({ kind: "text", content: "hi", truncated: false })),
 }));
 
 import * as commands from "../tauri/commands";
@@ -1294,5 +1295,99 @@ describe("the places bar while a pane is on a remote", () => {
     useFileManagerStore.getState().addBookmark("left");
 
     expect(useFileManagerStore.getState().bookmarks).toHaveLength(2);
+  });
+});
+
+describe("opening a preview", () => {
+  const file = (name: string, kind: "file" | "directory" = "file") => ({
+    name,
+    path: `/p/${name}`,
+    kind,
+    size: 1,
+    itemCount: null,
+    modifiedAt: null,
+    createdAt: null,
+    hidden: false,
+  });
+
+  const seedFor = (cursor: number, entries = [file("a.txt"), file("sub", "directory")]) => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      preview: null,
+      activePane: "left",
+      panes: {
+        ...s.panes,
+        left: {
+          ...s.panes.left,
+          path: "/p",
+          remote: null,
+          entries,
+          filter: "",
+          showHidden: true,
+          sort: { key: "name", ascending: true },
+          cursor,
+        },
+      },
+    });
+  };
+
+  // Directories sort first, so display index 1 is "sub" and 2 is "a.txt".
+  it("previews the file under the cursor", async () => {
+    seedFor(2);
+    await useFileManagerStore.getState().openPreview("left");
+    expect(commands.previewFile).toHaveBeenCalledWith("/p/a.txt");
+    expect(useFileManagerStore.getState().preview).toMatchObject({
+      name: "a.txt",
+      content: { kind: "text" },
+    });
+  });
+
+  // Both are ordinary things to press F3 on by accident, so neither is an
+  // error — nothing should happen at all.
+  it("does nothing on the .. row", async () => {
+    seedFor(0);
+    await useFileManagerStore.getState().openPreview("left");
+    expect(commands.previewFile).not.toHaveBeenCalled();
+    expect(useFileManagerStore.getState().preview).toBeNull();
+  });
+
+  it("does nothing on a folder", async () => {
+    seedFor(1);
+    await useFileManagerStore.getState().openPreview("left");
+    expect(commands.previewFile).not.toHaveBeenCalled();
+    expect(useFileManagerStore.getState().preview).toBeNull();
+  });
+
+  it("says so plainly for a pane on a host", async () => {
+    seedFor(2);
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: { ...s.panes, left: { ...s.panes.left, remote: "build" } },
+    });
+    await useFileManagerStore.getState().openPreview("left");
+    expect(commands.previewFile).not.toHaveBeenCalled();
+    expect(useFileManagerStore.getState().preview?.error).toMatch(/not available/);
+  });
+
+  it("reports a failed read instead of hanging on “Reading”", async () => {
+    seedFor(2);
+    vi.mocked(commands.previewFile).mockRejectedValueOnce({
+      kind: "permissionDenied",
+      message: "nope",
+    });
+    await useFileManagerStore.getState().openPreview("left");
+    const p = useFileManagerStore.getState().preview;
+    expect(p?.error).toBeTruthy();
+    expect(p?.content).toBeNull();
+  });
+
+  // A big file can still be arriving after the overlay is closed or the cursor
+  // has moved on; applying it then would reopen something nobody asked for.
+  it("drops a result that is no longer wanted", async () => {
+    seedFor(2);
+    const pending = useFileManagerStore.getState().openPreview("left");
+    useFileManagerStore.getState().closePreview();
+    await pending;
+    expect(useFileManagerStore.getState().preview).toBeNull();
   });
 });
