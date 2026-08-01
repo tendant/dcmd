@@ -5,7 +5,8 @@ import userEvent from "@testing-library/user-event";
 
 vi.mock("../tauri/commands", async () => (await import("../test-utils")).commandMocks);
 
-import { AddRemoteDialog, filterHosts, matchesHost } from "./AddRemoteDialog";
+import { AddRemoteDialog } from "./AddRemoteDialog";
+import { filterHosts, matchesHost } from "./hostFilter";
 import { useFileManagerStore } from "../state/fileManagerStore";
 
 const HOSTS = ["prod-web-01", "prod-db-eu", "staging-web", "dev-box", "BUILD-01"];

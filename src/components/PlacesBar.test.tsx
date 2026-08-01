@@ -38,7 +38,7 @@ describe("PlacesBar", () => {
   it("opens a bookmark in the active pane", async () => {
     render(<PlacesBar />);
     await userEvent.click(screen.getByRole("button", { name: /Code/ }));
-    expect(navigate).toHaveBeenCalledWith("left", "/c");
+    expect(connectPane).toHaveBeenCalledWith("left", null, "/c");
   });
 
   it("connects a host in the active pane", async () => {
@@ -51,7 +51,29 @@ describe("PlacesBar", () => {
   it("alt-click sends the place to the other pane", () => {
     render(<PlacesBar />);
     fireEvent.click(screen.getByRole("button", { name: /Code/ }), { altKey: true });
-    expect(navigate).toHaveBeenCalledWith("right", "/c");
+    expect(connectPane).toHaveBeenCalledWith("right", null, "/c");
+  });
+
+  // The reported bug: with a pane connected to a server, a bookmark for a
+  // folder on this machine was looked up on the server instead.
+  it("returns to this machine when the pane is on a host", async () => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: { ...s.panes, left: { ...s.panes.left, remote: "build" } },
+    });
+    render(<PlacesBar />);
+    await userEvent.click(screen.getByRole("button", { name: /Code/ }));
+    // null is the whole point: it clears the pane's host before listing.
+    expect(connectPane).toHaveBeenCalledWith("left", null, "/c");
+  });
+
+  it("opens a bookmark taken on a host back on that host", async () => {
+    useFileManagerStore.setState({
+      bookmarks: [{ name: "Src", path: "/srv/src", remote: "build" }],
+    });
+    render(<PlacesBar />);
+    await userEvent.click(screen.getByRole("button", { name: /Src/ }));
+    expect(connectPane).toHaveBeenCalledWith("left", "build", "/srv/src");
   });
 
   it("marks a host a pane is already on", () => {
@@ -80,7 +102,7 @@ describe("opening a place by number", () => {
   it("counts bookmarks first, then hosts", () => {
     const store = useFileManagerStore.getState();
     store.openPlace(0, "left");
-    expect(navigate).toHaveBeenCalledWith("left", "/c");
+    expect(connectPane).toHaveBeenCalledWith("left", null, "/c");
     store.openPlace(1, "left");
     expect(connectPane).toHaveBeenCalledWith("left", "build");
   });
@@ -89,6 +111,29 @@ describe("opening a place by number", () => {
     useFileManagerStore.getState().openPlace(8, "left");
     expect(navigate).not.toHaveBeenCalled();
     expect(connectPane).not.toHaveBeenCalled();
+  });
+});
+
+describe("right-clicking the bar itself", () => {
+  const openContextMenu = vi.fn();
+  beforeEach(() => useFileManagerStore.setState({ openContextMenu } as any));
+
+  it("offers the bar's own actions, not a chip's", () => {
+    const { container } = render(<PlacesBar />);
+    fireEvent.contextMenu(container.firstChild as HTMLElement);
+    expect(openContextMenu).toHaveBeenCalledWith(
+      expect.objectContaining({ place: { kind: "bar", id: "" } }),
+    );
+  });
+
+  // Otherwise right-clicking a chip would give the bar's menu instead of the
+  // one for that bookmark or host.
+  it("does not fire when a chip was the target", () => {
+    render(<PlacesBar />);
+    fireEvent.contextMenu(screen.getByRole("button", { name: /Code/ }));
+    expect(openContextMenu).toHaveBeenCalledWith(
+      expect.objectContaining({ place: { kind: "bookmark", id: "/c" } }),
+    );
   });
 });
 

@@ -153,7 +153,7 @@ export interface ContextMenuState {
    * Those need their own actions — a bookmark is not a file, and offering to
    * rename or trash one would be nonsense.
    */
-  place?: { kind: "bookmark" | "remote"; id: string };
+  place?: { kind: "bookmark" | "remote" | "bar"; id: string };
 }
 
 export interface FileManagerState {
@@ -479,7 +479,10 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   openPlace: (index, pane) => {
     const { bookmarks, remotes } = get();
     if (index < bookmarks.length) {
-      void get().navigate(pane, bookmarks[index].path);
+      const b = bookmarks[index];
+      // Same reasoning as the places bar: the bookmark says which machine it is
+      // on, and navigate() alone would reuse whatever host the pane is on.
+      void get().connectPane(pane, b.remote ?? null, b.path);
       return;
     }
     const remote = remotes[index - bookmarks.length];
@@ -512,16 +515,25 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
 
   addBookmark: (pane) =>
     set((state) => {
-      const path = state.panes[pane].path;
-      if (!path || state.bookmarks.some((b) => b.path === path)) return {};
+      const { path, remote } = state.panes[pane];
+      // The same path can exist on this machine and on a server and mean two
+      // different places, so a bookmark is only a duplicate if the host matches
+      // as well.
+      if (!path || state.bookmarks.some((b) => b.path === path && (b.remote ?? null) === remote))
+        return {};
       const name = path.split("/").filter(Boolean).pop() || path;
-      return { bookmarks: [...state.bookmarks, { name, path }].slice(0, MAX_BOOKMARKS) };
+      return {
+        bookmarks: [...state.bookmarks, { name, path, remote }].slice(0, MAX_BOOKMARKS),
+      };
     }),
 
   removeBookmark: (path) =>
     set((state) => ({ bookmarks: state.bookmarks.filter((b) => b.path !== path) })),
 
-  isBookmarked: (path) => get().bookmarks.some((b) => b.path === path),
+  isBookmarked: (path) => {
+    const remote = get().panes[get().activePane].remote;
+    return get().bookmarks.some((b) => b.path === path && (b.remote ?? null) === remote);
+  },
 
   setColumnWidth: (pane, column, px) =>
     set((state) => ({
@@ -1054,6 +1066,15 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         : typeof error === "string"
           ? { kind: "unknown", message: error }
           : error;
+    // An error bar can be dismissed, scrolled past, or replaced by the next one.
+    // The log keeps it, which matters most for the failures that leave a pane
+    // showing nothing at all.
+    if (normalised) {
+      void commands.logMessage(
+        "error",
+        `pane ${pane}: ${normalised.kind}: ${normalised.message}`,
+      );
+    }
     set((state) => ({
       panes: {
         ...state.panes,

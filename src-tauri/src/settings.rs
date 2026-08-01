@@ -65,6 +65,14 @@ impl Default for ColumnWidths {
 pub struct Bookmark {
     pub name: String,
     pub path: String,
+    /// The host this path is on, or `None` for this machine.
+    ///
+    /// Without it a bookmark is just a string, and opening one from a pane that
+    /// happened to be connected to a server looked for the path over there.
+    /// Absent in files written before this existed, which is exactly the local
+    /// case, so the default is correct for them.
+    #[serde(default)]
+    pub remote: Option<String>,
 }
 
 /// Enough to be useful without the list becoming something to scroll.
@@ -346,6 +354,14 @@ mod tests {
         assert_eq!(s.left.sort_key, "size");
     }
 
+    /// Files written before bookmarks knew about hosts must still load, and
+    /// their entries are local ones.
+    #[test]
+    fn a_bookmark_without_a_host_reads_as_local() {
+        let json = r#"{"bookmarks":[{"name":"Home","path":"/Users/x"}]}"#;
+        assert_eq!(parse(json).bookmarks[0].remote, None);
+    }
+
     #[test]
     fn bookmarks_round_trip() {
         let s = Settings {
@@ -353,10 +369,12 @@ mod tests {
                 Bookmark {
                     name: "Home".into(),
                     path: "/Users/x".into(),
+                    remote: None,
                 },
                 Bookmark {
                     name: "Code".into(),
-                    path: "/Users/x/code".into(),
+                    path: "/srv/code".into(),
+                    remote: Some("build".into()),
                 },
             ],
             ..Settings::default()

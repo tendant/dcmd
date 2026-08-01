@@ -1,24 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFileManagerStore } from "../state/fileManagerStore";
-
-/**
- * Matches a host against a query, requiring every whitespace-separated term to
- * appear somewhere in the name.
- *
- * Terms rather than one substring because host names are usually structured —
- * `prod-web-01`, `staging-db-eu` — so "prod db" should find the production
- * database without needing the parts in order or remembering the separator.
- */
-export function matchesHost(host: string, query: string): boolean {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (terms.length === 0) return true;
-  const name = host.toLowerCase();
-  return terms.every((t) => name.includes(t));
-}
-
-export function filterHosts(hosts: string[], query: string): string[] {
-  return hosts.filter((h) => matchesHost(h, query));
-}
+import { filterHosts } from "./hostFilter";
 
 /**
  * Picks a host from the ssh config.
