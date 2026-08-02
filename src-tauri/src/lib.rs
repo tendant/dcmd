@@ -60,6 +60,10 @@ pub fn run() {
                 ()
             }
         })
+        // Dragging a file out to another application needs a native drag
+        // session; an HTML5 drag inside a webview cannot hand a file to another
+        // app. This plugin starts one for the paths we give it.
+        .plugin(tauri_plugin_drag::init())
         .invoke_handler(tauri::generate_handler![
             commands::list_directory,
             commands::list_remote_directory,

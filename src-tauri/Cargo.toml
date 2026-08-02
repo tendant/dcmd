@@ -31,6 +31,7 @@ base64 = "0.22"
 # open::that_detached, which does not wait for the launcher and so reports
 # success even when nothing can open the file.
 open = "5"
+tauri-plugin-drag = "2.1.1"
 
 # Remote browsing. Unix-only, because it drives the system ssh binary — which is
 # the point: ~/.ssh/config, agent, ProxyJump and known_hosts all work without us
