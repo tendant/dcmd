@@ -18,8 +18,8 @@ export function useGlobalKeyboard() {
       const store = useFileManagerStore.getState();
 
       // A modal owns the keyboard while it is open, or typing would land in the
-      // filter behind it. The dialog handles its own Escape.
-      if (store.dialog) return;
+      // filter behind it. Each handles its own Escape.
+      if (store.dialog || store.preview) return;
 
       // Don't intercept when typing in inputs or textareas
       if (

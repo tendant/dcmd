@@ -87,7 +87,7 @@ fn move_one(
     }
 
     // Before resolve_destination, which under Overwrite would delete the source.
-    check_not_same_directory(source, destination_dir)?;
+    check_not_same_directory(source, destination_dir, policy)?;
 
     let landing = destination_dir.join(file_name);
 

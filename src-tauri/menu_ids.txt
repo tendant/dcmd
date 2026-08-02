@@ -4,7 +4,9 @@
 # would otherwise produce a menu item that silently does nothing.
 new_folder
 rename
+duplicate
 open
+preview
 copy
 move
 reveal

@@ -22,12 +22,14 @@ pub const MENU_EVENT: &str = "menu://action";
 pub mod ids {
     pub const NEW_FOLDER: &str = "new_folder";
     pub const RENAME: &str = "rename";
+    pub const DUPLICATE: &str = "duplicate";
     pub const COPY: &str = "copy";
     pub const MOVE: &str = "move";
     pub const REVEAL: &str = "reveal";
     pub const COPY_PATH: &str = "copy_path";
     pub const TRASH: &str = "trash";
     pub const OPEN: &str = "open";
+    pub const PREVIEW: &str = "preview";
     pub const BACK: &str = "back";
     pub const FORWARD: &str = "forward";
     pub const UP: &str = "up";
@@ -65,7 +67,9 @@ pub mod ids {
     pub const ALL: &[&str] = &[
         NEW_FOLDER,
         RENAME,
+        DUPLICATE,
         OPEN,
+        PREVIEW,
         COPY,
         MOVE,
         REVEAL,
@@ -127,6 +131,10 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         // row, so it cannot be one fixed command. The key is in the label
         // instead, which is the discoverability the shortcut bar used to give.
         .item(&item(ids::OPEN, "Open  (Enter)", None)?)
+        // Unlike Enter, this means one fixed thing whatever the row is, so the
+        // menu can own the key outright and the keyboard handler stays clear of
+        // it. F3 is the view key this class of app has used for decades.
+        .item(&item(ids::PREVIEW, "Preview", Some("F3"))?)
         .separator()
         .item(&item(
             ids::NEW_FOLDER,
@@ -134,6 +142,11 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             Some("CmdOrCtrl+Shift+N"),
         )?)
         .item(&item(ids::RENAME, "Rename…", Some("CmdOrCtrl+Shift+R"))?)
+        .item(&item(
+            ids::DUPLICATE,
+            "Duplicate",
+            Some("CmdOrCtrl+Shift+D"),
+        )?)
         .separator()
         .item(&item(
             ids::COPY,

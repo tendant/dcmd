@@ -18,6 +18,7 @@ export const commandMocks = {
   moveEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
   cancelTransfer: vi.fn(async () => undefined),
   openLog: vi.fn(async () => undefined),
+  previewFile: vi.fn(async () => ({ kind: "text", content: "", truncated: false })),
   logMessage: vi.fn(async () => undefined),
   rsyncTransfer: vi.fn(async () => ({ changes: [], cancelled: false, errors: [] })),
   markStartup: vi.fn(async () => undefined),

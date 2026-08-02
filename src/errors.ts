@@ -39,7 +39,8 @@ export type ErrorContext =
   | "delete"
   | "create folder"
   | "rename"
-  | "size";
+  | "size"
+  | "preview";
 
 interface RawError {
   kind?: string;

@@ -3,6 +3,7 @@ import { useFileManagerStore, PaneId } from "../state/fileManagerStore";
 import { RenameInput } from "./RenameInput";
 import { formatBytes, formatTimestamp } from "../format";
 import { COLUMN_HANDLE_CLASS } from "./ColumnResizer";
+import { pathsForDrag, startNativeDrag } from "../tauri/drag";
 
 interface FileRowProps {
   entry: FileEntry;
@@ -39,6 +40,10 @@ export function FileRow({
   const clearSelection = useFileManagerStore((s) => s.clearSelection);
   const setActivePane = useFileManagerStore((s) => s.setActivePane);
   const columnWidths = useFileManagerStore((s) => s.panes[paneId].columnWidths);
+  const selected = useFileManagerStore((s) => s.panes[paneId].selected);
+  // A remote pane holds paths on the other machine. Handing one to another
+  // application would give it a path that does not exist here.
+  const isRemote = useFileManagerStore((s) => s.panes[paneId].remote !== null);
 
   if (isRenaming) {
     return (
@@ -147,6 +152,14 @@ export function FileRow({
       onClick={handleRowClick}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
+      // ".." is not a file, and a row being renamed owns the pointer.
+      draggable={!isParentDirectory && !isRenaming && !isRemote}
+      onDragStart={(e) => {
+        // The webview's own drag cannot carry a file past the window, so it is
+        // cancelled and a native drag started in its place.
+        e.preventDefault();
+        void startNativeDrag(pathsForDrag(selected, entry.path)).catch(() => {});
+      }}
       className={`flex items-center gap-2 px-2 py-1 text-sm font-mono border-l-4 cursor-pointer select-none transition-colors ${
         isCursor
           ? "border-l-blue-600 bg-blue-200 dark:bg-blue-800 font-semibold text-gray-900 dark:text-gray-100"

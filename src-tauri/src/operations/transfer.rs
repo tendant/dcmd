@@ -91,7 +91,20 @@ impl TransferControl<'_> {
 /// source before copying from it — the file is destroyed and the copy then fails
 /// with "No such file or directory". It is reachable by default, since both panes
 /// open on the same directory. Must be called before `resolve_destination`.
-pub fn check_not_same_directory(source: &Path, destination_dir: &Path) -> Result<(), FsError> {
+///
+/// `KeepBoth` is the exception, and the reason is the whole of the danger above:
+/// it resolves to a name that does not exist yet, so nothing is deleted and the
+/// source is never read from a path that has just been removed. That case is
+/// duplicating a file in place, which is a deliberate operation rather than an
+/// accident, so refusing it would be refusing something safe.
+pub fn check_not_same_directory(
+    source: &Path,
+    destination_dir: &Path,
+    policy: ConflictPolicy,
+) -> Result<(), FsError> {
+    if policy == ConflictPolicy::KeepBoth {
+        return Ok(());
+    }
     let parent = match source.parent() {
         Some(p) => p,
         None => return Ok(()),

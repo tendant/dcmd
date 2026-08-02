@@ -190,3 +190,47 @@ describe("the cursor highlight", () => {
     expect(selected).not.toContain("border-l-blue-600");
   });
 });
+
+describe("dragging a row out to another app", () => {
+  const row = (over: Partial<Record<string, unknown>> = {}, paneOver = {}) => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: { ...s.panes, left: { ...s.panes.left, remote: null, ...paneOver } },
+    });
+    return render(
+      <FileRow
+        entry={entry("a.txt")}
+        paneId="left"
+        isSelected={false}
+        isCursor={false}
+        isRenaming={false}
+        index={1}
+        {...over}
+      />,
+    ).container.firstElementChild as HTMLElement;
+  };
+
+  it("marks an ordinary row draggable", () => {
+    expect(row().getAttribute("draggable")).toBe("true");
+  });
+
+  // ".." is not a file, so there is nothing to hand over.
+  it("does not offer to drag the parent row", () => {
+    expect(row({ isParentDirectory: true }).getAttribute("draggable")).toBe("false");
+  });
+
+  // A remote pane holds paths on the other machine; another app here would be
+  // given a path that does not exist.
+  it("does not offer to drag from a pane on a host", () => {
+    expect(row({}, { remote: "build" }).getAttribute("draggable")).toBe("false");
+  });
+
+  // The webview's own drag cannot carry a file past the window. Letting it
+  // proceed would show a drag that silently does nothing when dropped.
+  it("cancels the webview drag so a native one can replace it", () => {
+    const el = row();
+    const ev = new Event("dragstart", { bubbles: true, cancelable: true });
+    el.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+  });
+});
