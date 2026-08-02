@@ -15,6 +15,7 @@ export const MENU_ACTIONS: Record<string, (s: FileManagerState) => void> = {
     const entry = entryAtCursor(s.panes[s.activePane]);
     if (entry) s.startRenaming(s.activePane, entry.path);
   },
+  duplicate: (s) => void s.duplicateSelection(s.activePane),
   copy: (s) => void s.requestTransfer("copy"),
   move: (s) => void s.requestTransfer("move"),
   reveal: (s) => {

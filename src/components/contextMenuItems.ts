@@ -231,6 +231,12 @@ export function buildMenuItems(state: FileManagerState, menu: ContextMenuState):
     },
     {
       kind: "action",
+      label: `Duplicate ${acting}`,
+      shortcut: `${MOD}${SHIFT}D`,
+      run: () => void state.duplicateSelection(pane),
+    },
+    {
+      kind: "action",
       label: `Move ${acting} to Trash`,
       shortcut: `F8 / ${MOD}${DEL}`,
       danger: true,

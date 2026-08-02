@@ -22,6 +22,7 @@ pub const MENU_EVENT: &str = "menu://action";
 pub mod ids {
     pub const NEW_FOLDER: &str = "new_folder";
     pub const RENAME: &str = "rename";
+    pub const DUPLICATE: &str = "duplicate";
     pub const COPY: &str = "copy";
     pub const MOVE: &str = "move";
     pub const REVEAL: &str = "reveal";
@@ -66,6 +67,7 @@ pub mod ids {
     pub const ALL: &[&str] = &[
         NEW_FOLDER,
         RENAME,
+        DUPLICATE,
         OPEN,
         PREVIEW,
         COPY,
@@ -140,6 +142,11 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             Some("CmdOrCtrl+Shift+N"),
         )?)
         .item(&item(ids::RENAME, "Rename…", Some("CmdOrCtrl+Shift+R"))?)
+        .item(&item(
+            ids::DUPLICATE,
+            "Duplicate",
+            Some("CmdOrCtrl+Shift+D"),
+        )?)
         .separator()
         .item(&item(
             ids::COPY,

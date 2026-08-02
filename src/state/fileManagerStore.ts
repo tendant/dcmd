@@ -293,6 +293,7 @@ export interface FileManagerState {
   /** Opens the delete confirmation, which names what it will remove. */
   requestTrash: (pane: PaneId) => void;
   dismissDialog: () => void;
+  duplicateSelection: (pane: PaneId) => Promise<void>;
   openPreview: (pane: PaneId) => Promise<void>;
   closePreview: () => void;
   setTransferProgress: (p: commands.TransferProgress) => void;
@@ -1010,6 +1011,35 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     } catch (err) {
       state.reportError(active, err, op);
     }
+  },
+
+  duplicateSelection: async (pane) => {
+    const state = get();
+    const p = state.panes[pane];
+
+    // Duplicating on a host means an rsync between two paths on the same
+    // machine, which is a different call from the one used for transfers.
+    if (p.remote) {
+      state.setPaneError(pane, {
+        kind: "invalidName",
+        message: "Duplicating is not available for files on a host yet.",
+      });
+      return;
+    }
+
+    const sources = targetPaths(p);
+    if (sources.length === 0) {
+      state.setPaneError(pane, "Nothing to duplicate");
+      return;
+    }
+
+    // Deliberately not through requestTransfer, which refuses a destination
+    // equal to the source folder. That guard exists so an accidental copy into
+    // the same place cannot offer a destructive Replace — but duplicating *is*
+    // that copy, made safe by asking for keepBoth rather than a choice. The
+    // backend's unique_destination gives "a copy.txt", then "a copy 2.txt".
+    state.setPaneError(pane, null);
+    await state.performTransfer("copy", pane, sources, p.path, "keepBoth");
   },
 
   performTransfer: async (op, pane, sources, destination, policy) => {

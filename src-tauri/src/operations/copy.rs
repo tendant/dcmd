@@ -95,7 +95,7 @@ fn copy_one(
         .ok_or_else(|| FsError::Io("cannot get file name".to_string()))?;
 
     // Before resolve_destination, which under Overwrite would delete the source.
-    check_not_same_directory(source, destination_dir)?;
+    check_not_same_directory(source, destination_dir, policy)?;
 
     let dest = destination_dir.join(file_name);
 
@@ -104,7 +104,14 @@ fn copy_one(
     // destination has that the source does not, which is rarely what "copy this
     // folder in" is meant to do. The policy still applies, but to the individual
     // files inside.
-    if source.is_dir() && dest.is_dir() {
+    // `dest != source` matters when duplicating in place, where they are the
+    // same path: merging a folder into itself copies its contents back over
+    // themselves and never produces the second folder that was asked for. That
+    // case has to fall through so KeepBoth can pick a free name instead.
+    if source.is_dir()
+        && dest.is_dir()
+        && crate::fs::paths::resolve(&dest) != crate::fs::paths::resolve(source)
+    {
         check_not_into_itself(source, destination_dir)?;
         merge_dir(source, &dest, policy, control, report, &mut Vec::new())?;
         return Ok(Some(()));
@@ -662,13 +669,16 @@ mod same_dir_tests {
         );
     }
 
+    /// KeepBoth is excluded deliberately: it is the one policy that cannot
+    /// destroy the source, because it resolves to a name that does not exist.
+    /// The others must still refuse — under Overwrite a same-folder copy would
+    /// delete the file and then fail to read it.
     #[test]
-    fn every_policy_refuses_the_same_directory() {
+    fn the_destructive_policies_refuse_the_same_directory() {
         for policy in [
             ConflictPolicy::Fail,
             ConflictPolicy::Skip,
             ConflictPolicy::Overwrite,
-            ConflictPolicy::KeepBoth,
         ] {
             let tmp = TempDir::new().unwrap();
             let f = tmp.path().join("a.txt");
@@ -682,6 +692,56 @@ mod same_dir_tests {
                 "{policy:?} should not have copied"
             );
         }
+    }
+
+    /// The invariant the old blanket test protected, kept for the policy that
+    /// is now allowed through: duplicating must leave the original exactly as
+    /// it was. This is the assertion that would catch KeepBoth ever gaining a
+    /// deletion step.
+    #[test]
+    fn keep_both_duplicates_without_touching_the_original() {
+        let tmp = TempDir::new().unwrap();
+        let f = tmp.path().join("a.txt");
+        fs::write(&f, "keep").unwrap();
+
+        let report = copy_paths_with(
+            std::slice::from_ref(&f),
+            tmp.path(),
+            ConflictPolicy::KeepBoth,
+        )
+        .unwrap();
+
+        assert_eq!(report.completed.len(), 1, "{report:?}");
+        assert!(f.exists(), "the source was destroyed");
+        assert_eq!(fs::read_to_string(&f).unwrap(), "keep");
+        assert_eq!(
+            fs::read_to_string(tmp.path().join("a copy.txt")).unwrap(),
+            "keep"
+        );
+    }
+
+    /// Merging a folder onto itself would copy its contents back over
+    /// themselves and produce no duplicate at all, which is what happened
+    /// before the merge branch learned to check.
+    #[test]
+    fn duplicating_a_folder_does_not_merge_it_into_itself() {
+        let tmp = TempDir::new().unwrap();
+        let d = tmp.path().join("sub");
+        fs::create_dir_all(&d).unwrap();
+        fs::write(d.join("x.txt"), "X").unwrap();
+
+        copy_paths_with(
+            std::slice::from_ref(&d),
+            tmp.path(),
+            ConflictPolicy::KeepBoth,
+        )
+        .unwrap();
+
+        assert!(tmp.path().join("sub copy/x.txt").exists());
+        // The source gained nothing: no copy of itself inside itself.
+        assert!(!d.join("sub").exists());
+        assert!(!d.join("x copy.txt").exists());
+        assert_eq!(fs::read_dir(&d).unwrap().count(), 1);
     }
 
     #[test]
@@ -922,6 +982,64 @@ mod partial_conflict_tests {
             fs::read_to_string(right.join("dup_dir/new.txt")).unwrap(),
             "NEW"
         );
+    }
+
+    /// Duplicating in place: the destination folder is the one the source is
+    /// already in. This is what the Duplicate command does, and it is the case
+    /// the copy/move guard in the UI otherwise refuses outright, so it is worth
+    /// proving the backend really accepts it rather than assuming.
+    #[test]
+    fn a_file_can_be_copied_into_its_own_folder() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = t.path();
+        fs::write(dir.join("a.txt"), "CONTENT").unwrap();
+
+        let report = copy_paths_with(&[dir.join("a.txt")], dir, ConflictPolicy::KeepBoth).unwrap();
+
+        assert_eq!(report.completed.len(), 1, "{report:?}");
+        // The original is untouched and the duplicate sits beside it.
+        assert_eq!(fs::read_to_string(dir.join("a.txt")).unwrap(), "CONTENT");
+        assert_eq!(
+            fs::read_to_string(dir.join("a copy.txt")).unwrap(),
+            "CONTENT"
+        );
+    }
+
+    /// The one with a real risk of running away: the copy lands beside the
+    /// source rather than inside it, so there is nothing to recurse into.
+    #[test]
+    fn a_folder_can_be_copied_into_its_own_parent() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = t.path();
+        fs::create_dir_all(dir.join("sub/deeper")).unwrap();
+        fs::write(dir.join("sub/deeper/x.txt"), "X").unwrap();
+
+        let report = copy_paths_with(&[dir.join("sub")], dir, ConflictPolicy::KeepBoth).unwrap();
+
+        assert_eq!(report.completed.len(), 1, "{report:?}");
+        assert_eq!(
+            fs::read_to_string(dir.join("sub copy/deeper/x.txt")).unwrap(),
+            "X"
+        );
+        // Nothing was written back into the source.
+        assert!(!dir.join("sub/sub copy").exists());
+        assert!(!dir.join("sub/sub").exists());
+    }
+
+    /// Twice in a row has to give two duplicates, not an error and not an
+    /// overwrite of the first one.
+    #[test]
+    fn duplicating_twice_numbers_the_second() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = t.path();
+        fs::write(dir.join("a.txt"), "CONTENT").unwrap();
+
+        for _ in 0..2 {
+            copy_paths_with(&[dir.join("a.txt")], dir, ConflictPolicy::KeepBoth).unwrap();
+        }
+
+        assert!(dir.join("a copy.txt").exists());
+        assert!(dir.join("a copy 2.txt").exists());
     }
 
     #[test]

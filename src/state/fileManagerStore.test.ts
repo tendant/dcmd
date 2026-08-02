@@ -1391,3 +1391,86 @@ describe("opening a preview", () => {
     expect(useFileManagerStore.getState().preview).toBeNull();
   });
 });
+
+describe("duplicating in place", () => {
+  const entryAt = (name: string) => ({
+    name,
+    path: `/p/${name}`,
+    kind: "file" as const,
+    size: 1,
+    itemCount: null,
+    modifiedAt: null,
+    createdAt: null,
+    hidden: false,
+  });
+
+  const seedDup = (over = {}) => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      activePane: "left",
+      dialog: null,
+      panes: {
+        ...s.panes,
+        left: {
+          ...s.panes.left,
+          path: "/p",
+          remote: null,
+          entries: [entryAt("a.txt"), entryAt("b.txt")],
+          selected: new Set<string>(),
+          filter: "",
+          showHidden: true,
+          cursor: 1,
+          error: null,
+          ...over,
+        },
+      },
+    });
+  };
+
+  // The point of the feature: the destination is the folder it is already in,
+  // which requestTransfer refuses outright.
+  it("copies into the same folder, asking to keep both", async () => {
+    seedDup();
+    await useFileManagerStore.getState().duplicateSelection("left");
+    expect(commands.copyEntriesWith).toHaveBeenCalledWith(
+      expect.any(String),
+      ["/p/a.txt"],
+      "/p",
+      "keepBoth",
+    );
+  });
+
+  it("duplicates the whole selection, not just the cursor row", async () => {
+    seedDup({ selected: new Set(["/p/a.txt", "/p/b.txt"]) });
+    await useFileManagerStore.getState().duplicateSelection("left");
+    expect(commands.copyEntriesWith).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.arrayContaining(["/p/a.txt", "/p/b.txt"]),
+      "/p",
+      "keepBoth",
+    );
+  });
+
+  // keepBoth is what makes duplicating safe: no conflict dialog, and nothing
+  // can be overwritten by a command whose whole purpose is a second copy.
+  it("never asks about conflicts", async () => {
+    seedDup();
+    await useFileManagerStore.getState().duplicateSelection("left");
+    expect(commands.checkConflicts).not.toHaveBeenCalled();
+    expect(useFileManagerStore.getState().dialog).toBeNull();
+  });
+
+  it("says so on an empty folder rather than doing nothing", async () => {
+    seedDup({ entries: [], cursor: 0 });
+    await useFileManagerStore.getState().duplicateSelection("left");
+    expect(commands.copyEntriesWith).not.toHaveBeenCalled();
+    expect(useFileManagerStore.getState().panes.left.error?.message).toMatch(/Nothing to/);
+  });
+
+  it("declines on a pane connected to a host", async () => {
+    seedDup({ remote: "build" });
+    await useFileManagerStore.getState().duplicateSelection("left");
+    expect(commands.copyEntriesWith).not.toHaveBeenCalled();
+    expect(useFileManagerStore.getState().panes.left.error?.message).toMatch(/not available/);
+  });
+});
