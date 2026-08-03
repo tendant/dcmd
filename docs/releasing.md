@@ -84,25 +84,25 @@ Only a line beginning `Developer ID Application:` will do.
 
 ### The credentials CI needs
 
-Use the script, which exports the certificate and then proves it is what CI
-expects before it can be pasted anywhere:
+Export the certificate from **Keychain Access → My Certificates**, selecting
+the single "Developer ID Application" entry, then check it:
 
 ```sh
-./scripts/signing-cert.sh
+./scripts/signing-cert.sh ~/Desktop/DeveloperID.p12
 ```
 
-It refuses to continue unless the export is a readable PKCS#12 **containing a
-private key**, and unless the base64 decodes back to those exact bytes. It
-prints the identity string to use and writes the base64 to a file for `pbcopy`
-— deliberately to a file, so a private key does not end up in a terminal
-transcript or a chat window.
+The export is not scripted on purpose. `security export -t identities` takes
+the entire keychain — every Apple Development certificate, and any revoked ones
+— with no way to select one identity. A keychain usually holds several, and
+none of the others should reach a runner.
 
-By hand, it is these two, plus the same checks:
-
-```sh
-base64 -i cert.p12 | pbcopy                                    # APPLE_CERTIFICATE
-security find-identity -v -p codesigning | grep "Developer ID" # APPLE_SIGNING_IDENTITY
-```
+The script refuses to hand anything over unless the file is a readable PKCS#12
+**containing a private key**, and unless the base64 decodes back to those exact
+bytes. It also reports how many certificates the file holds and whether the
+first is a Developer ID one, which is what catches exporting the wrong entry
+out of several. It writes the base64 to a file for `pbcopy` — deliberately to a
+file, so a private key does not end up in a terminal transcript or a chat
+window.
 
 Notarisation needs an **app-specific password**, not the Apple ID password:
 appleid.apple.com → Sign-In and Security → App-Specific Passwords.
@@ -138,7 +138,8 @@ The bytes in `APPLE_CERTIFICATE` are not a PKCS#12. In order of likelihood:
   export includes the private key, and only that can sign. A `.cer` base64s
   perfectly well and fails exactly like this.
 - **The base64 was truncated or altered** on its way into the secret field.
-- **The wrong file was encoded.**
+- **The wrong file was encoded** — easy where a keychain holds several
+  identities, which most do.
 
 A wrong *password* does not produce this — that fails later, complaining about
 MAC verification. This message is about the format alone.

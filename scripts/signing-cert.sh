@@ -1,95 +1,111 @@
 #!/usr/bin/env bash
-# Export the Developer ID certificate for CI, and prove it is what CI expects.
+# Check that an exported signing certificate is what CI expects, and encode it.
 #
-# The manual route — export from Keychain Access, base64 it, paste into a
-# secret — fails silently: the wrong export produces a .cer with no private key,
-# and CI only says "SecKeychainItemImport: Unknown format in import" long after
-# the fact. Everything here is checked before it can be pasted anywhere.
+#   ./scripts/signing-cert.sh path/to/DeveloperID.p12
+#
+# CI reports a bad certificate as "SecKeychainItemImport: Unknown format in
+# import", after a five-minute build, having said nothing useful about why.
+# Everything it depends on is checkable here in a second.
+#
+# The export itself is not done here. `security export -t identities` takes the
+# whole keychain — every Apple Development certificate and any revoked ones
+# along with the one wanted — and offers no way to select a single identity.
+# Keychain Access can, so that is where the export belongs.
 #
 # The private key never leaves this machine and is never printed. The base64 is
-# written to a file for `pbcopy` precisely so it does not end up in a terminal
-# transcript, a chat window or a shell history.
+# written to a file so it does not end up in a terminal transcript, a chat
+# window or a shell history.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-OUT_P12="dcmd-signing.p12"
-OUT_B64="dcmd-signing.p12.base64"
 
-identity=$(security find-identity -v -p codesigning \
-  | grep "Developer ID Application" | head -1 || true)
+if [ $# -lt 1 ]; then
+  echo "Certificates that can sign for distribution:"
+  security find-identity -v -p codesigning | grep "Developer ID Application" \
+    || echo "  none — see docs/releasing.md"
+  cat <<'MSG'
 
-if [ -z "$identity" ]; then
-  cat >&2 <<'MSG'
-No "Developer ID Application" certificate found.
+Export one of them, then pass the file to this script:
 
-An "Apple Development" certificate is not a substitute: it signs for your own
-registered devices, cannot be used for distribution, and Apple will not
-notarise it. See docs/releasing.md for how to create the right one.
+  Keychain Access -> My Certificates -> right-click the
+  "Developer ID Application" entry -> Export -> .p12
+
+"My Certificates", not "Certificates": only that view exports the private key.
+The other produces a .cer, which encodes and uploads perfectly and then fails
+at import — that is the error above.
+
+Select the single certificate before exporting. With several selected the file
+holds them all, and the development ones have no business leaving the machine.
+
+  ./scripts/signing-cert.sh ~/Desktop/DeveloperID.p12
 MSG
   exit 1
 fi
 
-# The full string between the quotes is what APPLE_SIGNING_IDENTITY must be.
-name=$(printf '%s' "$identity" | sed -E 's/.*"(.*)".*/\1/')
-echo "Found: $name"
+P12="$1"
+[ -f "$P12" ] || { echo "No such file: $P12" >&2; exit 1; }
+
+read -r -s -p "Export password: " pass
+echo
 echo
 
-echo "Choose an export password. CI needs it as APPLE_CERTIFICATE_PASSWORD."
-echo "Keychain may also ask permission to export the private key."
-echo
-# -T with no argument still prompts; letting `security` handle the password
-# keeps it out of this script's arguments, where `ps` could see it.
-security export -k login.keychain-db -t identities -f pkcs12 -o "$OUT_P12" 2>/dev/null || {
-  echo "Export failed. Run it yourself if the prompt did not appear:" >&2
-  echo "  security export -k login.keychain-db -t identities -f pkcs12 -o $OUT_P12" >&2
-  exit 1
-}
+fail() { echo "FAILED: $*" >&2; exit 1; }
 
-echo
-echo "Checking the export is a PKCS#12 with a private key in it..."
-read -r -s -p "Re-enter the export password to verify: " pass
-echo
-if ! openssl pkcs12 -in "$OUT_P12" -nokeys -passin "pass:$pass" >/dev/null 2>&1; then
-  echo "FAILED: not a readable PKCS#12, or the password is wrong." >&2
-  echo "This is exactly what CI reports as 'Unknown format in import'." >&2
-  rm -f "$OUT_P12"
-  exit 1
-fi
-if ! openssl pkcs12 -in "$OUT_P12" -nocerts -noout -passin "pass:$pass" \
-     -passout "pass:$pass" >/dev/null 2>&1; then
-  echo "FAILED: no private key inside. A .cer export looks like this —" >&2
-  echo "export from Keychain Access' 'My Certificates', not 'Certificates'." >&2
-  rm -f "$OUT_P12"
-  exit 1
-fi
+# 1. Is it a PKCS#12 at all? This is the check CI fails on.
+openssl pkcs12 -in "$P12" -nokeys -passin "pass:$pass" >/dev/null 2>&1 \
+  || fail "not a readable PKCS#12, or the password is wrong.
+  A .cer exported from the 'Certificates' view looks exactly like this to CI."
+
+# 2. Does it carry a private key? A certificate alone cannot sign.
+openssl pkcs12 -in "$P12" -nocerts -noout -passin "pass:$pass" \
+  -passout "pass:$pass" >/dev/null 2>&1 \
+  || fail "no private key inside — this is a certificate only."
+
+# 3. Which certificates are in it? With several identities in a keychain it is
+#    easy to export the wrong one, or all of them.
+subjects=$(openssl pkcs12 -in "$P12" -nokeys -passin "pass:$pass" 2>/dev/null \
+  | openssl x509 -noout -subject 2>/dev/null || true)
+all=$(openssl pkcs12 -in "$P12" -nokeys -passin "pass:$pass" 2>/dev/null \
+  | grep -c "BEGIN CERTIFICATE" || true)
 unset pass
 
-base64 -i "$OUT_P12" -o "$OUT_B64"
+echo "Certificates in the file: $all"
+[ -n "$subjects" ] && echo "  first: $subjects"
 
-# The round trip is the thing CI actually depends on: whatever is pasted must
-# decode back to these exact bytes.
-if ! base64 -D -i "$OUT_B64" | cmp -s - "$OUT_P12"; then
-  echo "FAILED: the base64 does not decode back to the same file." >&2
-  exit 1
+if ! printf '%s' "$subjects" | grep -q "Developer ID Application"; then
+  echo
+  echo "WARNING: the first certificate is not a Developer ID Application one."
+  echo "Only that kind can sign for distribution, and only it can be notarised."
+  echo "If this file holds several, check you exported the right entry."
 fi
+
+if [ "${all:-0}" -gt 2 ]; then
+  echo
+  echo "NOTE: $all certificates here. That still imports, and"
+  echo "APPLE_SIGNING_IDENTITY decides which one signs — but exporting a single"
+  echo "identity keeps development keys off the runner entirely."
+fi
+
+# 4. The round trip is what CI actually depends on.
+OUT="${P12%.p12}.base64"
+base64 -i "$P12" -o "$OUT"
+base64 -D -i "$OUT" | cmp -s - "$P12" \
+  || fail "the base64 does not decode back to the same bytes."
+
+identity=$(security find-identity -v -p codesigning \
+  | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)".*/\1/' || true)
 
 cat <<MSG
 
-Both checks passed: a valid PKCS#12 containing a private key, and base64 that
-decodes back to it byte for byte.
+Checks passed: a readable PKCS#12, a private key inside, and base64 that
+decodes back byte for byte.
 
-Set these three secrets:
+  APPLE_SIGNING_IDENTITY       ${identity:-<the Developer ID Application string>}
+  APPLE_CERTIFICATE            pbcopy < $OUT
+  APPLE_CERTIFICATE_PASSWORD   the export password
 
-  APPLE_SIGNING_IDENTITY   $name
-  APPLE_CERTIFICATE        pbcopy < $OUT_B64
-  APPLE_CERTIFICATE_PASSWORD   the password you just chose
-
-Paste the base64 into the GitHub secret field only. Do not echo it, and do not
+Paste the base64 into the GitHub secret field only. Do not echo it and do not
 paste it into a chat or an issue — it is your private key.
 
-When the secrets are in place:
-
-  rm -f $OUT_P12 $OUT_B64
-
-Both are gitignored, but they should not linger.
+Afterwards:  rm -f "$P12" "$OUT"
 MSG
