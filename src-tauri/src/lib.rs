@@ -45,25 +45,23 @@ pub fn trace_startup_once(label: &str) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     trace_startup("run() entered");
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(commands::SizeCalculations::default())
         .manage(commands::Transfers::default())
-        // Unix-only: remote browsing drives the system ssh binary.
-        .manage({
-            #[cfg(unix)]
-            {
-                remote::session::Connections::default()
-            }
-            #[cfg(not(unix))]
-            {
-                ()
-            }
-        })
         // Dragging a file out to another application needs a native drag
         // session; an HTML5 drag inside a webview cannot hand a file to another
         // app. This plugin starts one for the paths we give it.
-        .plugin(tauri_plugin_drag::init())
+        .plugin(tauri_plugin_drag::init());
+
+    // Unix-only: remote browsing drives the system ssh binary. A separate
+    // statement rather than a cfg inside `.manage()`, which on other platforms
+    // registered a unit value — state nothing ever asks for, and something
+    // clippy rightly refuses.
+    #[cfg(unix)]
+    let builder = builder.manage(remote::session::Connections::default());
+
+    builder
         .invoke_handler(tauri::generate_handler![
             commands::list_directory,
             commands::list_remote_directory,
