@@ -84,12 +84,14 @@ Only a line beginning `Developer ID Application:` will do.
 
 ### The credentials CI needs
 
-Export the certificate from **Keychain Access → My Certificates**, selecting
-the single "Developer ID Application" entry, then check it:
-
 ```sh
-./scripts/signing-cert.sh ~/Desktop/DeveloperID.p12
+./scripts/signing-cert.sh --export              # export it, then check
+./scripts/signing-cert.sh ~/Desktop/some.p12    # check one exported by hand
 ```
+
+`--export` takes the identity out of the login keychain and writes a `.p12`
+holding only it. Use it when Keychain Access greys out the `.p12` option, which
+it does unless the selected row is the one with the private key beneath it.
 
 The export is not scripted on purpose. `security export -t identities` takes
 the entire keychain — every Apple Development certificate, and any revoked ones
@@ -97,8 +99,9 @@ the entire keychain — every Apple Development certificate, and any revoked one
 none of the others should reach a runner.
 
 The script refuses to hand anything over unless the file is a readable PKCS#12
-**containing a private key**, and unless the base64 decodes back to those exact
-bytes. It also reports how many certificates the file holds and whether the
+**containing a private key**, unless macOS itself can `security import` it into
+a throwaway keychain — the same operation CI performs, so the answer is direct
+rather than by proxy — and unless the base64 decodes back to those exact bytes. It also reports how many certificates the file holds and whether the
 first is a Developer ID one, which is what catches exporting the wrong entry
 out of several. It writes the base64 to a file for `pbcopy` — deliberately to a
 file, so a private key does not end up in a terminal transcript or a chat
@@ -137,6 +140,17 @@ The bytes in `APPLE_CERTIFICATE` are not a PKCS#12. In order of likelihood:
   certificate under *Certificates* and under *My Certificates*; only the latter
   export includes the private key, and only that can sign. A `.cer` base64s
   perfectly well and fails exactly like this.
+- **The `.p12` was written by OpenSSL 3 with its default algorithms.** macOS
+  cannot read those at all. Demonstrated:
+
+  ```
+  openssl pkcs12 -export ...            -> security import FAILED
+  openssl pkcs12 -export -legacy ...    -> security import OK
+  ```
+
+  `-legacy` is required, or `-certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES
+  -macalg SHA1`. The script does this; anything hand-rolled with OpenSSL 3 will
+  not.
 - **The base64 was truncated or altered** on its way into the secret field.
 - **The wrong file was encoded** — easy where a keychain holds several
   identities, which most do.
