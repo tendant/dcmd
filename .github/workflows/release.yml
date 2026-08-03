@@ -58,6 +58,30 @@ jobs:
 
       - name: Build the bundle
         run: pnpm tauri build --target ${{ matrix.target }}
+        env:
+          # Signing and notarisation, macOS only. Tauri signs when a certificate
+          # is present and notarises when credentials are, so an unsigned build
+          # still succeeds where the secrets are absent — a fork, or this repo
+          # before they were added. That is deliberate: a missing secret should
+          # not turn into a red build with an opaque cause.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      # Says plainly whether the bundle is signed and accepted, rather than
+      # leaving it to be discovered by a user whose Mac refuses to open it.
+      - name: Report signing status
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          APP=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/macos" \
+            -maxdepth 1 -name '*.app' | head -1)
+          echo "bundle: $APP"
+          codesign --verify --deep --strict --verbose=2 "$APP" || echo "NOT SIGNED"
+          # The check Gatekeeper actually performs on another machine.
+          spctl --assess --type execute --verbose "$APP" || echo "NOT ACCEPTED BY GATEKEEPER"
 
       - uses: actions/upload-artifact@v4
         with:
