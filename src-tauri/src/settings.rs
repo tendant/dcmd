@@ -47,15 +47,21 @@ pub struct ColumnWidths {
     pub modified: f64,
 }
 
-pub const DEFAULT_COLUMN_WIDTH: f64 = 64.0;
+/// Wide enough for a folder's item count — "12,345 items" — not just a byte
+/// size. Counts run far wider than "123.4 MB", and a directory of thousands
+/// clipped its own count at the old shared default.
+pub const DEFAULT_SIZE_WIDTH: f64 = 104.0;
+
+/// The timestamp is at most "26-08-03", so this one can stay narrow.
+pub const DEFAULT_MODIFIED_WIDTH: f64 = 64.0;
 pub const MIN_COLUMN_WIDTH: f64 = 40.0;
 pub const MAX_COLUMN_WIDTH: f64 = 240.0;
 
 impl Default for ColumnWidths {
     fn default() -> Self {
         Self {
-            size: DEFAULT_COLUMN_WIDTH,
-            modified: DEFAULT_COLUMN_WIDTH,
+            size: DEFAULT_SIZE_WIDTH,
+            modified: DEFAULT_MODIFIED_WIDTH,
         }
     }
 }
@@ -145,16 +151,18 @@ impl Settings {
         }
         self.columns = None;
 
-        let clamp_col = |w: f64| {
+        // The fallback is per column: a NaN width in the file should land on
+        // that column's own default, not on whichever one happened to be first.
+        let clamp_col = |w: f64, default: f64| {
             if w.is_finite() {
                 w.clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH)
             } else {
-                DEFAULT_COLUMN_WIDTH
+                default
             }
         };
         for pane in [&mut self.left, &mut self.right] {
-            pane.columns.size = clamp_col(pane.columns.size);
-            pane.columns.modified = clamp_col(pane.columns.modified);
+            pane.columns.size = clamp_col(pane.columns.size, DEFAULT_SIZE_WIDTH);
+            pane.columns.modified = clamp_col(pane.columns.modified, DEFAULT_MODIFIED_WIDTH);
         }
         // A bookmark with no path cannot be navigated to, and duplicates would
         // stack up invisibly; both are cheap to drop here rather than guard

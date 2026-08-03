@@ -6,7 +6,11 @@ import userEvent from "@testing-library/user-event";
 vi.mock("../tauri/commands", async () => (await import("../test-utils")).commandMocks);
 
 import { FileRow } from "./FileRow";
-import { useFileManagerStore } from "../state/fileManagerStore";
+import {
+  DEFAULT_MODIFIED_WIDTH,
+  DEFAULT_SIZE_WIDTH,
+  useFileManagerStore,
+} from "../state/fileManagerStore";
 import type { FileEntry } from "../types/fileEntry";
 
 const entry = (name: string, over: Partial<FileEntry> = {}): FileEntry => ({
@@ -232,5 +236,56 @@ describe("dragging a row out to another app", () => {
     const ev = new Event("dragstart", { bubbles: true, cancelable: true });
     el.dispatchEvent(ev);
     expect(ev.defaultPrevented).toBe(true);
+  });
+});
+
+describe("the size column for a folder", () => {
+  const folder = (itemCount: number | null) => ({
+    ...entry("stuff"),
+    kind: "directory" as const,
+    size: null,
+    itemCount,
+  });
+
+  const render1 = (e: ReturnType<typeof folder>) =>
+    render(
+      <FileRow
+        entry={e}
+        paneId="left"
+        isSelected={false}
+        isCursor={false}
+        isRenaming={false}
+        index={1}
+      />,
+    );
+
+  // The report: a folder of thousands ran past the column, which defaulted to
+  // the same width as the timestamp beside it.
+  it("groups a large count so it can be read", () => {
+    render1(folder(12345));
+    expect(screen.getByText("12,345 items")).toBeInTheDocument();
+  });
+
+  it("keeps the singular for one item", () => {
+    render1(folder(1));
+    expect(screen.getByText("1 item")).toBeInTheDocument();
+  });
+
+  it("says nothing when the count is unknown", () => {
+    render1(folder(null));
+    expect(screen.queryByText(/item/)).not.toBeInTheDocument();
+  });
+});
+
+describe("column defaults", () => {
+  // The size column holds "12,345 items"; the timestamp is at most "26-08-03".
+  // Sharing one default made the size column too narrow for its own content.
+  it("gives the size column more room than the timestamp", () => {
+    expect(DEFAULT_SIZE_WIDTH).toBeGreaterThan(DEFAULT_MODIFIED_WIDTH);
+  });
+
+  // A rough proxy for "12,345 items" at the 12px monospace the cell uses.
+  it("fits a five-figure item count", () => {
+    expect(DEFAULT_SIZE_WIDTH).toBeGreaterThanOrEqual("12,345 items".length * 7.2);
   });
 });

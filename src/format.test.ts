@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatTimestamp } from "./format";
+import { formatCount, formatBytes, formatTimestamp } from "./format";
 
 // Fixed reference point so these never depend on when they run.
 const NOW = new Date(2026, 6, 30, 14, 35); // 30 July 2026, 14:35 local
@@ -72,5 +72,30 @@ describe("formatBytes", () => {
     for (const b of [0, 999, 1024, 1024 ** 2 * 1.5, 1024 ** 4 * 999]) {
       expect(formatBytes(b).length).toBeLessThanOrEqual(8);
     }
+  });
+});
+
+describe("formatCount", () => {
+  // The reason it exists: a folder of thousands showed "12345 items", which is
+  // both hard to read and wider than the column allowed for.
+  it("groups thousands", () => {
+    expect(formatCount(12345)).toBe("12,345");
+    expect(formatCount(1234567)).toBe("1,234,567");
+  });
+
+  it("leaves small numbers alone", () => {
+    expect(formatCount(0)).toBe("0");
+    expect(formatCount(999)).toBe("999");
+  });
+
+  it("groups from the right, not in threes from the left", () => {
+    expect(formatCount(1000)).toBe("1,000");
+    expect(formatCount(10000)).toBe("10,000");
+  });
+
+  // Grouped by hand rather than through toLocaleString, so the width of the
+  // column does not depend on where the machine happens to be.
+  it("does not follow the host locale", () => {
+    expect(formatCount(1234)).toBe("1,234");
   });
 });

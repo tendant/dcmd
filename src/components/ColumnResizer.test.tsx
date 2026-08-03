@@ -9,7 +9,8 @@ import { COLUMN_HANDLE_CLASS, ColumnResizer } from "./ColumnResizer";
 import { ColumnHeaders } from "./ColumnHeaders";
 import { FileRow } from "./FileRow";
 import {
-  DEFAULT_COLUMN_WIDTH,
+  DEFAULT_MODIFIED_WIDTH,
+  DEFAULT_SIZE_WIDTH,
   MAX_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
   useFileManagerStore,
@@ -30,11 +31,11 @@ beforeEach(() => {
       ...st.panes,
       left: {
         ...st.panes.left,
-        columnWidths: { size: DEFAULT_COLUMN_WIDTH, modified: DEFAULT_COLUMN_WIDTH },
+        columnWidths: { size: DEFAULT_SIZE_WIDTH, modified: DEFAULT_SIZE_WIDTH },
       },
       right: {
         ...st.panes.right,
-        columnWidths: { size: DEFAULT_COLUMN_WIDTH, modified: DEFAULT_COLUMN_WIDTH },
+        columnWidths: { size: DEFAULT_SIZE_WIDTH, modified: DEFAULT_SIZE_WIDTH },
       },
     },
   });
@@ -53,18 +54,20 @@ describe("ColumnResizer", () => {
     handle.focus();
     // The handle sits on the column's leading edge, so left grows it.
     await userEvent.keyboard("{ArrowLeft}");
-    expect(widths().size).toBe(DEFAULT_COLUMN_WIDTH + 8);
+    expect(widths().size).toBe(DEFAULT_SIZE_WIDTH + 8);
     await userEvent.keyboard("{ArrowRight}{ArrowRight}");
-    expect(widths().size).toBe(DEFAULT_COLUMN_WIDTH - 8);
+    expect(widths().size).toBe(DEFAULT_SIZE_WIDTH - 8);
   });
 
   it("resets both columns on double-click", async () => {
     setWidths({ size: 200, modified: 150 });
     render(<ColumnResizer column="size" paneId="left" />);
     await userEvent.dblClick(screen.getByRole("separator"));
+    // Each column returns to its own default: the size column is wider because
+    // it has to hold an item count, not just a byte size.
     expect(widths()).toEqual({
-      size: DEFAULT_COLUMN_WIDTH,
-      modified: DEFAULT_COLUMN_WIDTH,
+      size: DEFAULT_SIZE_WIDTH,
+      modified: DEFAULT_MODIFIED_WIDTH,
     });
   });
 
@@ -73,8 +76,8 @@ describe("ColumnResizer", () => {
     screen.getByRole("separator").focus();
     await userEvent.keyboard("{ArrowLeft}");
     const w = widths();
-    expect(w.modified).toBe(DEFAULT_COLUMN_WIDTH + 8);
-    expect(w.size).toBe(DEFAULT_COLUMN_WIDTH);
+    expect(w.modified).toBe(DEFAULT_SIZE_WIDTH + 8);
+    expect(w.size).toBe(DEFAULT_SIZE_WIDTH);
   });
 
   it("is reachable by keyboard", () => {
@@ -181,7 +184,7 @@ describe("the panes size independently", () => {
     store.setColumnWidth("left", "size", 150);
     const s = useFileManagerStore.getState();
     expect(s.panes.left.columnWidths.size).toBe(150);
-    expect(s.panes.right.columnWidths.size).toBe(DEFAULT_COLUMN_WIDTH);
+    expect(s.panes.right.columnWidths.size).toBe(DEFAULT_SIZE_WIDTH);
   });
 
   it("resetting one pane leaves the other alone", () => {
@@ -190,7 +193,7 @@ describe("the panes size independently", () => {
     store.setColumnWidth("right", "size", 200);
     useFileManagerStore.getState().resetColumnWidths("left");
     const s = useFileManagerStore.getState();
-    expect(s.panes.left.columnWidths.size).toBe(DEFAULT_COLUMN_WIDTH);
+    expect(s.panes.left.columnWidths.size).toBe(DEFAULT_SIZE_WIDTH);
     expect(s.panes.right.columnWidths.size).toBe(200);
   });
 
@@ -199,7 +202,7 @@ describe("the panes size independently", () => {
     screen.getByRole("separator").focus();
     await userEvent.keyboard("{ArrowLeft}");
     const s = useFileManagerStore.getState();
-    expect(s.panes.right.columnWidths.size).toBe(DEFAULT_COLUMN_WIDTH + 8);
-    expect(s.panes.left.columnWidths.size).toBe(DEFAULT_COLUMN_WIDTH);
+    expect(s.panes.right.columnWidths.size).toBe(DEFAULT_SIZE_WIDTH + 8);
+    expect(s.panes.left.columnWidths.size).toBe(DEFAULT_SIZE_WIDTH);
   });
 });
