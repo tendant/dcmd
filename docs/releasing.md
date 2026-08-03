@@ -84,6 +84,21 @@ Only a line beginning `Developer ID Application:` will do.
 
 ### The credentials CI needs
 
+Use the script, which exports the certificate and then proves it is what CI
+expects before it can be pasted anywhere:
+
+```sh
+./scripts/signing-cert.sh
+```
+
+It refuses to continue unless the export is a readable PKCS#12 **containing a
+private key**, and unless the base64 decodes back to those exact bytes. It
+prints the identity string to use and writes the base64 to a file for `pbcopy`
+— deliberately to a file, so a private key does not end up in a terminal
+transcript or a chat window.
+
+By hand, it is these two, plus the same checks:
+
 ```sh
 base64 -i cert.p12 | pbcopy                                    # APPLE_CERTIFICATE
 security find-identity -v -p codesigning | grep "Developer ID" # APPLE_SIGNING_IDENTITY
@@ -108,6 +123,28 @@ signs with the hardened runtime, and submits for notarisation.
 
 A build with the secrets absent still succeeds, unsigned. Forks have no secrets,
 and a missing one should not become a red build whose cause is invisible.
+
+### When the certificate will not import
+
+```
+security: SecKeychainItemImport: Unknown format in import.
+failed codesign application: failed to run command security import
+```
+
+The bytes in `APPLE_CERTIFICATE` are not a PKCS#12. In order of likelihood:
+
+- **A `.cer` was exported instead of a `.p12`.** Keychain Access shows the same
+  certificate under *Certificates* and under *My Certificates*; only the latter
+  export includes the private key, and only that can sign. A `.cer` base64s
+  perfectly well and fails exactly like this.
+- **The base64 was truncated or altered** on its way into the secret field.
+- **The wrong file was encoded.**
+
+A wrong *password* does not produce this — that fails later, complaining about
+MAC verification. This message is about the format alone.
+
+`./scripts/signing-cert.sh` checks all of these locally, which is cheaper than
+finding out after a five-minute build on a runner.
 
 ### Confirming it worked
 

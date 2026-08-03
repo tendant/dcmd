@@ -44,3 +44,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Signing material. Exported by scripts/signing-cert.sh for pasting into CI
+# secrets, and never something that should reach the repository.
+*.p12
+*.p12.base64
+*.pem
+*.cer
+AuthKey_*.p8
