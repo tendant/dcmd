@@ -231,7 +231,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&item(ids::SORT_KIND, "Kind", Some("CmdOrCtrl+5"))?)
         .build()?;
 
-    let mut view = SubmenuBuilder::new(app, "View")
+    let view = SubmenuBuilder::new(app, "View")
         .item(&sort)
         .item(&item(
             ids::TOGGLE_HIDDEN,
@@ -264,14 +264,16 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 
     // Only where the webview can actually open it. A release build without the
     // devtools feature would otherwise show an item that does nothing.
+    //
+    // A cfg-gated rebinding rather than a `mut` reassigned inside a block: with
+    // the block compiled out there is nothing left to mutate, and the `mut`
+    // became an unused_mut warning in exactly the build that has no devtools.
     #[cfg(any(debug_assertions, feature = "devtools"))]
-    {
-        view = view.separator().item(&item(
-            ids::DEVTOOLS,
-            "Developer Tools",
-            Some("CmdOrCtrl+Alt+I"),
-        )?);
-    }
+    let view = view.separator().item(&item(
+        ids::DEVTOOLS,
+        "Developer Tools",
+        Some("CmdOrCtrl+Alt+I"),
+    )?);
 
     let view = view.build()?;
 
