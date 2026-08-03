@@ -44,3 +44,14 @@ export function formatTimestamp(ms: number | null, now: Date = new Date()): stri
 
   return `${pad(d.getFullYear() % 100)}-${monthDay}`;
 }
+
+/**
+ * A count with thousands separated: "12,345".
+ *
+ * Grouped explicitly rather than through toLocaleString, whose output follows
+ * the host locale and would make the column's width — and its tests —
+ * depend on where the machine happens to be.
+ */
+export function formatCount(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}

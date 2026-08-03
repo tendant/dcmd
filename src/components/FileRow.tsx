@@ -1,7 +1,7 @@
 import { FileEntry } from "../types/fileEntry";
 import { useFileManagerStore, PaneId } from "../state/fileManagerStore";
 import { RenameInput } from "./RenameInput";
-import { formatBytes, formatTimestamp } from "../format";
+import { formatBytes, formatCount, formatTimestamp } from "../format";
 import { COLUMN_HANDLE_CLASS } from "./ColumnResizer";
 import { pathsForDrag, startNativeDrag } from "../tauri/drag";
 
@@ -133,7 +133,7 @@ export function FileRow({
     } else if (typeof computed === "number") {
       sizeLabel = formatBytes(computed);
     } else if (entry.itemCount !== null) {
-      sizeLabel = `${entry.itemCount} item${entry.itemCount === 1 ? "" : "s"}`;
+      sizeLabel = `${formatCount(entry.itemCount)} item${entry.itemCount === 1 ? "" : "s"}`;
     }
   } else if (entry.size !== null) {
     sizeLabel = formatBytes(entry.size);

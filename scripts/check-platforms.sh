@@ -74,7 +74,12 @@ extract "$SRC/fs/atomic.rs" "$WORK/src/atomic.rs"
 
 # Everything cfg-gated that this script does not compile. Printed rather than
 # assumed, so the list cannot quietly go stale as the code grows.
-echo "checked here: fs/paths.rs, fs/atomic.rs"
+# Tests are stripped before extraction, so this compiles the other platforms'
+# code and never runs it. A cfg-dependent *assertion* — the Unix answer asserted
+# on both platforms — passes here and fails on a real runner. Where that matters,
+# lift the rule out of the cfg into a plain function and test that instead, so
+# the behaviour is reachable from any host.
+echo "checked here (compile only, tests stripped): fs/paths.rs, fs/atomic.rs"
 uncovered=$(grep -rl --include='*.rs' -E '#\[cfg\((unix|windows|not\(unix\)|target_os)' "$SRC" \
   | grep -v -E '/(paths|atomic)\.rs$' | sed "s|^$SRC/||" | sort | paste -sd' ' -)
 if [ -n "$uncovered" ]; then

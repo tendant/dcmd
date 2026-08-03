@@ -150,7 +150,11 @@ export const MAX_SPLIT = 1 - MIN_SPLIT;
 export type ResizableColumn = "size" | "modified";
 
 /** Pixels, not a fraction: these size their content, not the window. */
-export const DEFAULT_COLUMN_WIDTH = 64;
+/** Wide enough for "12,345 items", which is far wider than any byte size. */
+export const DEFAULT_SIZE_WIDTH = 104;
+
+/** The timestamp is at most "26-08-03", so this stays narrow. */
+export const DEFAULT_MODIFIED_WIDTH = 64;
 export const MIN_COLUMN_WIDTH = 40;
 export const MAX_COLUMN_WIDTH = 240;
 
@@ -449,7 +453,7 @@ const defaultPaneState = (path: string): PaneState => ({
   historyIndex: -1,
   showHidden: false,
   sort: { key: "name", ascending: true },
-  columnWidths: { size: DEFAULT_COLUMN_WIDTH, modified: DEFAULT_COLUMN_WIDTH },
+  columnWidths: { size: DEFAULT_SIZE_WIDTH, modified: DEFAULT_MODIFIED_WIDTH },
   dirSizes: {},
 });
 
@@ -576,7 +580,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         ...state.panes,
         [pane]: {
           ...state.panes[pane],
-          columnWidths: { size: DEFAULT_COLUMN_WIDTH, modified: DEFAULT_COLUMN_WIDTH },
+          columnWidths: { size: DEFAULT_SIZE_WIDTH, modified: DEFAULT_MODIFIED_WIDTH },
         },
       },
     })),

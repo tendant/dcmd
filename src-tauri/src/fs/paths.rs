@@ -35,6 +35,17 @@ const WINDOWS_RESERVED: &[&str] = &[
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
+/// Names Windows cannot store faithfully: it strips a trailing dot, so the file
+/// created would not be the one asked for, and it reads a backslash as a
+/// separator.
+///
+/// Split out from the cfg so the rule can be checked from any platform. The
+/// behaviour it guards was previously reachable only on a Windows runner, which
+/// is where the mistake surfaced.
+pub fn is_invalid_on_windows(name: &str) -> bool {
+    name.contains('\\') || name.ends_with('.')
+}
+
 pub fn validate_name(name: &str) -> Result<(), FsError> {
     if name.is_empty() {
         return Err(FsError::InvalidName("name cannot be empty".to_string()));
@@ -65,7 +76,7 @@ pub fn validate_name(name: &str) -> Result<(), FsError> {
         )));
     }
 
-    if cfg!(windows) && (name.contains('\\') || name.ends_with('.')) {
+    if cfg!(windows) && is_invalid_on_windows(name) {
         return Err(FsError::InvalidName(format!(
             "invalid name for this platform: {}",
             name
@@ -158,8 +169,41 @@ mod hygiene_tests {
 
     #[test]
     fn allows_dotfiles_and_names_containing_dots() {
-        for n in [".env", "..hidden", "a.b.c", "...", ".gitignore"] {
+        for n in [".env", "..hidden", "a.b.c", ".gitignore"] {
             assert!(validate_name(n).is_ok(), "{n} should be allowed");
+        }
+    }
+
+    /// The rule itself, checked wherever the tests happen to run. Everything
+    /// below about Windows depends on this, and without it the behaviour is
+    /// only ever exercised on one runner.
+    #[test]
+    fn the_windows_naming_rule_holds_on_any_host() {
+        for bad in ["...", "a.", "trailing.", "a\\b", "\\"] {
+            assert!(
+                is_invalid_on_windows(bad),
+                "{bad} is not storable on Windows"
+            );
+        }
+        for ok in [".env", "a.b.c", ".gitignore", "..hidden", "plain"] {
+            assert!(!is_invalid_on_windows(ok), "{ok} is a fine Windows name");
+        }
+    }
+
+    /// A trailing dot is a real name on Unix and a trap on Windows, which
+    /// strips it — the file created would not be the one that was asked for, so
+    /// it is refused there rather than silently renamed. The old test asserted
+    /// the Unix answer on both and failed only on a Windows runner.
+    #[test]
+    fn a_trailing_dot_is_allowed_only_where_it_survives() {
+        let result = validate_name("...");
+        if cfg!(windows) {
+            assert!(
+                matches!(result, Err(FsError::InvalidName(_))),
+                "Windows strips the trailing dot, so this must not be accepted"
+            );
+        } else {
+            assert!(result.is_ok(), "a trailing dot is a legal name here");
         }
     }
 
