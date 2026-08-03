@@ -166,6 +166,12 @@ passes there and fails on a real runner. Where behaviour differs by platform,
 lift the rule out of the `cfg` into a plain function and test that, so it can be
 checked from any host — `is_invalid_on_windows` is the example.
 
+Cutting a release, and what macOS signing needs, is in
+[docs/releasing.md](docs/releasing.md). The short version: the bundles are
+currently unsigned, so Gatekeeper refuses them on any Mac that did not build
+them, and the certificate required is not the Apple Development one already in
+most keychains.
+
 `DCMD_TRACE_STARTUP=1` makes a release build report startup milestones to
 stderr. Startup currently misses the design document's sub-100ms target; the
 measurements and where the time goes are recorded there.
