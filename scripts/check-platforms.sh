@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Cross-compile the platform-specific filesystem code for Linux and Windows.
 #
-# `cargo check --target` cannot be run on the real crate from a Mac: tauri-winres
-# needs llvm-rc for the Windows resource step. So the two files that contain
-# cfg-gated code are extracted into a throwaway crate and checked there, which is
-# enough to catch the unused import or wrong symbol that only that platform sees.
+# Cross-compiling the real crate from a Mac is not possible: tauri-winres needs
+# llvm-rc for the Windows resource step. So the filesystem files carrying
+# cfg-gated code are extracted into a throwaway crate and linted there, which
+# catches the unused import or wrong symbol only that platform sees.
 #
-# This is what CI does properly, on real runners. Run it before pushing changes
-# to cfg-gated code so the round trip is seconds rather than a red build.
+# Read the coverage list it prints. Only the extracted files are checked, and a
+# cfg elsewhere — lib.rs, the commands, the remote module — reaches no compiler
+# here at all. That gap is why a value managed only on Windows passed this
+# script and failed CI. This is a fast first pass, not a substitute for CI.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -70,10 +72,23 @@ PY
 extract "$SRC/fs/paths.rs" "$WORK/src/paths.rs"
 extract "$SRC/fs/atomic.rs" "$WORK/src/atomic.rs"
 
+# Everything cfg-gated that this script does not compile. Printed rather than
+# assumed, so the list cannot quietly go stale as the code grows.
+echo "checked here: fs/paths.rs, fs/atomic.rs"
+uncovered=$(grep -rl --include='*.rs' -E '#\[cfg\((unix|windows|not\(unix\)|target_os)' "$SRC" \
+  | grep -v -E '/(paths|atomic)\.rs$' | sed "s|^$SRC/||" | sort | paste -sd' ' -)
+if [ -n "$uncovered" ]; then
+  echo "NOT checked here (CI only): $uncovered"
+fi
+echo
+
 status=0
 for target in x86_64-unknown-linux-gnu x86_64-unknown-linux-musl x86_64-pc-windows-msvc; do
   printf '%-32s ' "$target"
-  if (cd "$WORK" && RUSTFLAGS="-D warnings" cargo check --quiet --target "$target" 2>/tmp/pc-err.txt); then
+  # clippy, not check: CI runs clippy with -D warnings, and its lints are what
+  # a `cargo check` here will not reproduce. A unit value managed only on
+  # Windows passed this script and failed the build.
+  if (cd "$WORK" && cargo clippy --quiet --all-targets --target "$target" -- -D warnings 2>/tmp/pc-err.txt); then
     echo "ok"
   else
     echo "FAILED"

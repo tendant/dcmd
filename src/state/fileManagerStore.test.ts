@@ -24,6 +24,7 @@ vi.mock("../tauri/commands", () => ({
 
 import * as commands from "../tauri/commands";
 import {
+  carriedOverFields,
   entryAtCursor,
   initialCursor,
   parentPath,
@@ -1472,5 +1473,52 @@ describe("duplicating in place", () => {
     await useFileManagerStore.getState().duplicateSelection("left");
     expect(commands.copyEntriesWith).not.toHaveBeenCalled();
     expect(useFileManagerStore.getState().panes.left.error?.message).toMatch(/not available/);
+  });
+});
+
+/**
+ * What survives a hot update of this module.
+ *
+ * Editing the store re-executes it and hands the components a fresh, empty one,
+ * which is why the window used to go blank mid-session. The data is carried
+ * across; the actions deliberately are not, or the edit being made would be
+ * overwritten by the implementations it replaced.
+ */
+describe("carrying state across a hot update", () => {
+  it("keeps the data", () => {
+    const kept = carriedOverFields({
+      activePane: "right",
+      splitRatio: 0.7,
+      bookmarks: [{ name: "a", path: "/a", remote: null }],
+    });
+    expect(kept).toEqual({
+      activePane: "right",
+      splitRatio: 0.7,
+      bookmarks: [{ name: "a", path: "/a", remote: null }],
+    });
+  });
+
+  // The whole reason for filtering. Restoring an action would put the previous
+  // implementation back, so the edit that triggered the update would appear to
+  // do nothing — worse than the blank window, because it looks like the code
+  // is wrong rather than the reload.
+  it("drops the actions so edits to them take effect", () => {
+    const kept = carriedOverFields({ panes: {}, navigate: () => {}, refresh: async () => {} });
+    expect(Object.keys(kept)).toEqual(["panes"]);
+  });
+
+  // Listing field names instead would silently drop any state added later by
+  // someone who did not know the list existed.
+  it("carries a field nobody thought to list", () => {
+    const kept = carriedOverFields({ somethingAddedLater: 42 });
+    expect(kept).toMatchObject({ somethingAddedLater: 42 });
+  });
+
+  // Sets and Maps are passed by reference within the same realm, so selection
+  // and the remote cache survive rather than arriving as empty objects.
+  it("keeps a Set intact", () => {
+    const selected = new Set(["/a"]);
+    const kept = carriedOverFields({ selected }) as { selected: Set<string> };
+    expect(kept.selected.has("/a")).toBe(true);
   });
 });

@@ -1493,3 +1493,44 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     }));
   },
 }));
+
+// Keeping the store's contents across a hot update.
+//
+// Vite re-executes a changed module up to the nearest Fast Refresh boundary —
+// the components — so this file is re-run on the way and builds a fresh store
+// whose panes are empty. The components then rebind to that one, and the
+// startup listing lives in an effect that does not run again, so the window
+// goes blank with nothing in the log to explain it. Two sessions were lost to
+// bugs that were really this.
+//
+// Data is carried over, actions deliberately are not: restoring the whole
+// snapshot would put the *old* implementations back and the edit being made
+// would appear to have no effect. Filtering on `typeof` rather than listing
+// field names means a new piece of state is carried over automatically instead
+// of being silently dropped by a list nobody remembered to update.
+export function carriedOverFields(
+  snapshot: Record<string, unknown>,
+): Partial<FileManagerState> {
+  return Object.fromEntries(
+    Object.entries(snapshot).filter(([, value]) => typeof value !== "function"),
+  ) as Partial<FileManagerState>;
+}
+
+// Stashed on `window` rather than `import.meta.hot.data`, which was the obvious
+// choice and does not work: Vite only runs a module's `dispose` callbacks when
+// it sits inside an accept boundary, and this one is accepted by the components
+// above it, so nothing was ever saved. A subscription keeps the stash current
+// instead, which depends on no Vite behaviour at all.
+const HMR_STASH = "__dcmd_hmr_state__";
+
+if (import.meta.hot) {
+  const saved = (window as unknown as Record<string, unknown>)[HMR_STASH] as
+    | Record<string, unknown>
+    | undefined;
+  if (saved) {
+    useFileManagerStore.setState(carriedOverFields(saved));
+  }
+  useFileManagerStore.subscribe((state) => {
+    (window as unknown as Record<string, unknown>)[HMR_STASH] = state;
+  });
+}
