@@ -6,9 +6,10 @@ React and Rust.
 Two panes side by side: one is the source, the other the destination. Copy,
 move, rename and delete work between them without ever reaching for the mouse.
 
-> **Status: early.** Browsing and file operations work and are covered by tests.
-> Bookmarks, search and preview are not implemented —
-> see [the design document](DCMD-Design-Document-v0.2.md) for what is planned.
+> **Status: 0.2, usable.** Browsing, file operations, bookmarks, SSH hosts and
+> preview all work and are covered by tests. Recursive filename search and the
+> command palette are not built yet — see
+> [the design document](DCMD-Design-Document-v0.2.md) for the full scope.
 
 ## Running it
 
@@ -48,15 +49,46 @@ window `pnpm tauri dev` opens. The app says so rather than failing silently.
 | Move to other pane | `F6` or `⌘⇧M` |
 | New folder | `F7` or `⌘⇧N` |
 | Rename | `F2` or `⌘⇧R` |
+| Duplicate here | `⌘⇧D` |
 | Move to Trash | `F8` or `⌘⌫` |
+| Preview | `F3` |
+| Select all / none / invert | `⌘A` / `⌘⇧A` / `⌘I` |
+| Show or hide the places bar | `⌘B` |
+| Open a bookmark or host | `⌘⇧1`–`⌘⇧9` |
+| Developer tools (dev builds) | `⌘⌥I` |
 
 On macOS the F-keys are claimed by the system for dictation, Do Not Disturb and
 media control, so they only reach the app with `Fn` held, or with *Use F1, F2,
 etc. keys as standard function keys* enabled in System Settings. The `⌘`
 bindings exist for that reason and do the same thing.
 
-**Right-click** a row or empty space for a menu of what applies, each item
-labelled with its keyboard shortcut.
+**Right-click** a row, empty space, a places-bar chip or the bar itself for a
+menu of what applies, each item labelled with its keyboard shortcut.
+
+Everything is also in the application menu. A command has exactly one binding:
+the menu owns every `⌘`/`Ctrl` accelerator, and the keyboard handler owns the
+keys whose meaning depends on what is happening — `Esc` unwinds a transfer, then
+a filter; `Backspace` edits a filter or goes up; `Space` selects or cancels a
+size walk. Those cannot be fixed accelerators, so they appear in menu labels
+rather than as shortcuts.
+
+## Remote hosts
+
+Hosts come from your `~/.ssh/config`, so keys, ports, `ProxyJump` and
+`known_hosts` all apply without dcmd reimplementing any of it. **Go → Add
+Host…**, or right-click the places bar. A config of any size is filtered as you
+type.
+
+A remote pane is a listing over SFTP, not a mounted filesystem. Transfers to or
+from it run **rsync**, which is what these connections are actually for: it
+resumes, it only sends what differs, and a dry run shows what would change
+before anything does. Listings are cached, so going back to a directory does not
+re-fetch it.
+
+Not available on a remote pane: preview, duplicating in place, and dragging out.
+Each says so rather than failing.
+
+*Unix only* — remote support drives the system `ssh` binary.
 
 ## Behaviour worth knowing
 
@@ -88,6 +120,20 @@ rather than failing to start.
 edge of either, or double-click a handle to reset both. Widths are per pane
 and persist.
 
+**Preview (`F3`)** shows text, Markdown, images and PDF read-only, without
+leaving the window. Markdown is rendered and sanitised — a previewed file is
+arbitrary content, and this window can call into the filesystem. Text over 1 MiB
+is truncated with a notice rather than refused; anything dcmd cannot display
+offers to open in the default application instead.
+
+**Files can be dragged out** to Finder, Mail or anything else that takes files.
+Dragging a selected row takes the whole selection; dragging an unselected one
+takes just that row.
+
+**Errors reach a log file.** The webview console goes nowhere a user can see, so
+uncaught errors, failed listings and transfer failures are appended to
+`dcmd.log` in the platform log directory. **dcmd → Open Log** opens it.
+
 **Sorting is per pane**, with folders always grouped first. Entries with nothing
 to compare — directories have no size, creation time is missing on some
 filesystems — sort last whichever direction is chosen.
@@ -98,17 +144,27 @@ filesystems — sort last whichever direction is chosen.
 pnpm test                       # frontend: store logic and components (jsdom)
 cd src-tauri && cargo test      # filesystem operations
 cargo clippy --all-targets -- -D warnings
+cargo clippy --release --all-targets -- -D warnings   # cfg differences only this sees
 cargo fmt --check
 ```
+
+The release run matters: code behind `debug_assertions` — the developer tools
+menu item — is compiled out there, and a `mut` that only the removed branch
+needed is a warning nothing in the dev profile can report.
 
 CI runs all of the above, with the Rust suite across Linux, macOS and Windows —
 the filesystem behaviour is what differs between them.
 
-`./scripts/check-platforms.sh` cross-compiles the cfg-gated filesystem code for
-Linux and Windows. The full crate cannot be cross-checked from macOS, because
-tauri-winres needs llvm-rc for the Windows resource step, so the platform files
-are extracted into a throwaway crate instead. Run it before pushing changes to
-platform-specific code — otherwise CI is the first thing that compiles them.
+`./scripts/check-platforms.sh` runs clippy over the cfg-gated filesystem code
+for Linux and Windows. The full crate cannot be cross-checked from macOS —
+tauri-winres needs llvm-rc for the Windows resource step — so those files are
+extracted into a throwaway crate instead. It prints what it does **not** cover,
+which is most of the crate.
+
+It compiles that code and never runs it, so a platform-dependent *assertion*
+passes there and fails on a real runner. Where behaviour differs by platform,
+lift the rule out of the `cfg` into a plain function and test that, so it can be
+checked from any host — `is_invalid_on_windows` is the example.
 
 `DCMD_TRACE_STARTUP=1` makes a release build report startup milestones to
 stderr. Startup currently misses the design document's sub-100ms target; the
@@ -137,6 +193,10 @@ src-tauri/src/
   commands/     the Tauri command surface
   fs/           listing, entry model, atomic rename
   operations/   copy, move, rename, mkdir, trash, transfer policy
+  remote/       ssh config, SFTP listing, rsync
+  menu.rs       the native menu; menu_ids.txt is the contract with the frontend
+  preview.rs    classifying and reading a file for display
+  logging.rs    the log file both sides write to
 ```
 
 The frontend holds no filesystem logic; every operation is a Rust command run
