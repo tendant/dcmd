@@ -162,4 +162,15 @@ jobs:
         with:
           draft: true
           generate_release_notes: true
-          files: artifacts/*
+          # Recursive, and by extension. upload-artifact keeps the path below
+          # `bundle/` inside each artifact, so what lands here is
+          # artifacts/dmg/…, artifacts/msi/… and so on — directories, which
+          # `artifacts/*` matched and then skipped. That produced a release
+          # with no assets and a green publish job saying so in a line nobody
+          # reads: "does not include a valid file".
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.msi
+            artifacts/**/*.exe
+            artifacts/**/*.AppImage
+            artifacts/**/*.deb
