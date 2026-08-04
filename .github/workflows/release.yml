@@ -18,17 +18,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Both Mac architectures: an x86_64 build will not run natively on
-          # Apple silicon and vice versa, and a universal binary would double
-          # the download for everyone to spare one group a choice.
+          # Apple silicon only. The x86_64 Mac bundle is not built: macos-13
+          # was retired on 2025-12-08, and the Intel runners replacing it go
+          # the same way when macos-15 retires in autumn 2027. Intel Macs can
+          # run the aarch64 build under Rosetta 2, which is the trade being
+          # made here — a slower app for a shrinking group, rather than a
+          # target whose runner is already on notice.
           - os: macos-latest
             target: aarch64-apple-darwin
-          # macos-13 was retired on 2025-12-08; jobs asking for it are queued
-          # and never scheduled, which looks like a slow build rather than a
-          # dead one. macos-15-intel is the free Intel replacement, and the
-          # last of them — Intel support ends when macos-15 retires in 2027.
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
           - os: windows-latest
@@ -71,9 +68,14 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # The Apple ID and team ID are not secret — the team ID is embedded in
+          # every signed binary — so they may be repository variables. Accept
+          # either, because a value set as a variable and read from `secrets`
+          # is not an error: it is the empty string, and notarisation then
+          # fails for a reason that names neither.
+          APPLE_ID: ${{ vars.APPLE_ID || secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
 
       # Says plainly whether the bundle is signed and accepted, rather than
       # leaving it to be discovered by a user whose Mac refuses to open it.

@@ -5,18 +5,22 @@ Releases are cut from a tag. Pushing `v*` runs
 four bundles on real runners and collects them into a **draft** GitHub release.
 Nothing becomes public until someone presses publish.
 
-Four targets, because only those runners can produce them:
+Three targets, because only those runners can produce them:
 
 | Target | Runner | Output |
 | --- | --- | --- |
 | `aarch64-apple-darwin` | `macos-latest` | `.dmg` |
-| `x86_64-apple-darwin` | `macos-15-intel` | `.dmg` |
 | `x86_64-unknown-linux-gnu` | `ubuntu-22.04` | `.AppImage`, `.deb` |
 | `x86_64-pc-windows-msvc` | `windows-latest` | `.msi`, `.exe` |
 
-Both Mac architectures are built separately rather than as one universal
-binary: a universal build doubles the download for everyone to spare one group
-a choice, and an x86_64 build will not run natively on Apple silicon.
+**macOS is Apple silicon only.** There is no x86_64 `.dmg`. `macos-13` was
+retired on 2025-12-08, and the Intel runners that replaced it retire with
+`macos-15` in autumn 2027, so the target was on a clock either way. Intel Macs
+run the aarch64 build under Rosetta 2 — slower, but it works, and it does not
+put a build in the release that quietly stops being produced.
+
+Say so in the release notes. Someone on an Intel Mac who sees one `.dmg` will
+assume it is for them, and they are right, but not obviously.
 
 ## Cutting a release
 
@@ -180,22 +184,35 @@ a bad certificate.
 Notarisation needs an **app-specific password**, not the Apple ID password:
 appleid.apple.com → Sign-In and Security → App-Specific Passwords.
 
-Add six repository secrets under Settings → Secrets and variables → Actions:
+Under Settings → Secrets and variables → Actions:
 
-| Secret | Value |
-| --- | --- |
-| `APPLE_CERTIFICATE` | base64 of the `.p12` |
-| `APPLE_CERTIFICATE_PASSWORD` | the password set when exporting it |
-| `APPLE_SIGNING_IDENTITY` | `Developer ID Application: Name (TEAMID)` |
-| `APPLE_ID` | the Apple ID email |
-| `APPLE_PASSWORD` | the app-specific password |
-| `APPLE_TEAM_ID` | the 10-character team ID |
+| Name | Kind | Value |
+| --- | --- | --- |
+| `APPLE_CERTIFICATE` | secret | base64 of the `.p12` |
+| `APPLE_CERTIFICATE_PASSWORD` | secret | the password set when exporting it |
+| `APPLE_SIGNING_IDENTITY` | secret | `Developer ID Application: Name (TEAMID)` |
+| `APPLE_PASSWORD` | secret | the app-specific password |
+| `APPLE_ID` | secret **or** variable | the Apple ID email |
+| `APPLE_TEAM_ID` | secret **or** variable | the 10-character team ID |
+
+That page holds secrets and variables on two tabs, and the last two belong on
+either — the team ID is embedded in every signed binary, so it is not a secret
+in any useful sense. The workflow reads both. Without that, a value entered on
+the *Variables* tab and read from `secrets` is not an error: it is the empty
+string, and notarisation fails for a reason that names neither.
+
+```sh
+gh secret list      # what is where
+gh variable list
+```
 
 Tauri reads these itself: it imports the certificate into a temporary keychain,
 signs with the hardened runtime, and submits for notarisation.
 
-A build with the secrets absent still succeeds, unsigned. Forks have no secrets,
-and a missing one should not become a red build whose cause is invisible.
+A build with them absent still succeeds, unsigned. Forks have no secrets, and a
+missing one should not become a red build whose cause is invisible. The cost is
+that a **half-configured** repository looks the same as a fork — read the
+`spctl` line in the log rather than the green check.
 
 ### When the certificate will not import
 
