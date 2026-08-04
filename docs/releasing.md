@@ -10,7 +10,7 @@ Four targets, because only those runners can produce them:
 | Target | Runner | Output |
 | --- | --- | --- |
 | `aarch64-apple-darwin` | `macos-latest` | `.dmg` |
-| `x86_64-apple-darwin` | `macos-13` | `.dmg` |
+| `x86_64-apple-darwin` | `macos-15-intel` | `.dmg` |
 | `x86_64-unknown-linux-gnu` | `ubuntu-22.04` | `.AppImage`, `.deb` |
 | `x86_64-pc-windows-msvc` | `windows-latest` | `.msi`, `.exe` |
 

@@ -23,7 +23,11 @@ jobs:
           # the download for everyone to spare one group a choice.
           - os: macos-latest
             target: aarch64-apple-darwin
-          - os: macos-13
+          # macos-13 was retired on 2025-12-08; jobs asking for it are queued
+          # and never scheduled, which looks like a slow build rather than a
+          # dead one. macos-15-intel is the free Intel replacement, and the
+          # last of them — Intel support ends when macos-15 retires in 2027.
+          - os: macos-15-intel
             target: x86_64-apple-darwin
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
