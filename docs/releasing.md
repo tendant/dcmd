@@ -78,34 +78,104 @@ Only a line beginning `Developer ID Application:` will do.
    **Developer ID Application**.
 2. It asks for a CSR: Keychain Access → Certificate Assistant → *Request a
    Certificate From a Certificate Authority* → save to disk.
-3. Upload the CSR, download the `.cer`, double-click to install.
-4. Keychain Access → *My Certificates* → the new "Developer ID Application"
-   entry → right-click → **Export** → `.p12`, with a password.
+3. Upload the CSR, download the `.cer`, double-click to install. That joins it
+   to the private key the CSR was made from; the pair is now an *identity*, and
+   `security find-identity -v -p codesigning` lists only identities, so anything
+   it prints has its key.
+4. Export it from Keychain Access, below.
 
 ### The credentials CI needs
 
+Keychain Access is no longer in *Utilities* — as of macOS 15 it lives in
+CoreServices, and Spotlight does not index it:
+
 ```sh
-./scripts/signing-cert.sh --export              # export it, then check
-./scripts/signing-cert.sh ~/Desktop/some.p12    # check one exported by hand
+open "/System/Library/CoreServices/Applications/Keychain Access.app"
 ```
 
-`--export` takes the identity out of the login keychain and writes a `.p12`
-holding only it. Use it when Keychain Access greys out the `.p12` option, which
-it does unless the selected row is the one with the private key beneath it.
+1. Sidebar → **login**, category → **My Certificates**. Not *Certificates*:
+   that view shows the same certificate without its key, and exporting from it
+   produces a file CI rejects as "Unknown format".
+2. Select the `Developer ID Application: …` row — the row itself, not the key
+   nested under its disclosure triangle.
+3. **File → Export Items…**, File Format **Personal Information Exchange
+   (.p12)**, set a password, then authorise with the login password.
 
-The export is not scripted on purpose. `security export -t identities` takes
-the entire keychain — every Apple Development certificate, and any revoked ones
-— with no way to select one identity. A keychain usually holds several, and
-none of the others should reach a runner.
+Then check the file before it becomes a secret:
 
-The script refuses to hand anything over unless the file is a readable PKCS#12
-**containing a private key**, unless macOS itself can `security import` it into
-a throwaway keychain — the same operation CI performs, so the answer is direct
-rather than by proxy — and unless the base64 decodes back to those exact bytes. It also reports how many certificates the file holds and whether the
-first is a Developer ID one, which is what catches exporting the wrong entry
-out of several. It writes the base64 to a file for `pbcopy` — deliberately to a
-file, so a private key does not end up in a terminal transcript or a chat
-window.
+```sh
+./scripts/signing-cert.sh ~/Desktop/whatever.p12
+```
+
+### Telling several certificates apart
+
+Names repeat: every `Apple Development` certificate issued to one person carries
+the same one, so the list is several identical rows. The name is not the
+identifier — the fingerprint is.
+
+In Keychain Access, ⌘I on a certificate shows its SHA-1 fingerprint, and the
+list has an *Expires* column. Both map back to what the command line prints:
+
+```sh
+security find-identity -v -p codesigning
+```
+
+None of that matters for this export, though. Only one row begins
+`Developer ID Application:`, and the repeated names are all `Apple Development`
+certificates, which cannot sign for distribution at all.
+
+One thing worth checking before exporting: `find-identity` also lists **revoked**
+certificates, marked `CSSMERR_TP_CERT_REVOKED`. They sign without complaint and
+fail at notarisation.
+
+### When `.p12` is greyed out
+
+Keychain Access offers `.p12` only for a certificate that has its private key in
+the same keychain. Three reasons it will not:
+
+1. **The wrong category** — *Certificates* rather than *My Certificates*.
+2. **The wrong row** — the key nested under the disclosure triangle rather than
+   the certificate above it.
+3. **The certificate and its key are in different keychains.** Double-clicking a
+   `.cer` offers a choice of keychain, and *System* is a plausible-looking
+   answer; the key created by the CSR is in *login* regardless. Neither half is
+   an identity on its own.
+
+The third is invisible from the command line, because `find-identity` searches
+every keychain in the list and reports a perfectly valid identity:
+
+```sh
+security find-certificate -c "Developer ID Application" -Z ~/Library/Keychains/login.keychain-db
+security find-certificate -c "Developer ID Application" -Z /Library/Keychains/System.keychain
+```
+
+If only the second prints a hash, that is the split. Put a copy of the
+certificate beside its key — importing a certificate needs no password, and the
+System copy can stay where it is:
+
+```sh
+security import ~/Downloads/developerID_application.cer -k ~/Library/Keychains/login.keychain-db
+```
+
+Once the certificate sits beside its key, the `.p12` option is available and
+Keychain Access exports the one selected row.
+
+### What the check does
+
+`./scripts/signing-cert.sh some.p12` refuses to hand anything over unless the
+file is a readable PKCS#12 **containing a private key**, unless macOS itself can
+`security import` it into a throwaway keychain — the same operation CI performs,
+so the answer is direct rather than by proxy — and unless the base64 decodes back
+to those exact bytes. It also reports how many certificates the file holds and
+whether the first is a Developer ID one, which catches exporting the wrong row.
+It writes the base64 to a file for `pbcopy` — deliberately to a file, so a
+private key does not end up in a terminal transcript or a chat window.
+
+It reads with OpenSSL's `-legacy` provider when needed. Keychain Access writes
+PKCS#12 using RC2-40-CBC, which OpenSSL 3 no longer enables by default, so a
+plain `openssl pkcs12` rejects an Apple export as `unsupported ... RC2-40-CBC`
+— a file `security import` accepts without complaint. Do not read that error as
+a bad certificate.
 
 Notarisation needs an **app-specific password**, not the Apple ID password:
 appleid.apple.com → Sign-In and Security → App-Specific Passwords.
@@ -149,8 +219,8 @@ The bytes in `APPLE_CERTIFICATE` are not a PKCS#12. In order of likelihood:
   ```
 
   `-legacy` is required, or `-certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES
-  -macalg SHA1`. The script does this; anything hand-rolled with OpenSSL 3 will
-  not.
+  -macalg SHA1`. A `.p12` from Keychain Access is already in that shape; only a
+  hand-rolled one is at risk.
 - **The base64 was truncated or altered** on its way into the secret field.
 - **The wrong file was encoded** — easy where a keychain holds several
   identities, which most do.
