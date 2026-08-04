@@ -82,13 +82,22 @@ jobs:
       # downloads is the .dmg, and Gatekeeper assesses the .dmg — an
       # unnotarised one is refused before anyone reaches the correctly
       # notarised app inside. So submit and staple it separately.
+      # The credentials are checked in the script, not in `if:`. The secrets
+      # context is not available to a step-level condition, and referencing it
+      # there is not a skipped step — it is an invalid workflow file, which
+      # GitHub reports as a run that failed in zero seconds for no stated
+      # reason.
       - name: Notarise and staple the .dmg
-        if: startsWith(matrix.os, 'macos') && (vars.APPLE_ID || secrets.APPLE_ID) != ''
+        if: startsWith(matrix.os, 'macos')
         env:
           APPLE_ID: ${{ vars.APPLE_ID || secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
         run: |
+          if [ -z "$APPLE_ID" ] || [ -z "$APPLE_TEAM_ID" ] || [ -z "$APPLE_PASSWORD" ]; then
+            echo "no notarisation credentials — skipping, as the build did"
+            exit 0
+          fi
           DMG=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/dmg" \
             -maxdepth 1 -name '*.dmg' | head -1)
           if [ -z "$DMG" ]; then
