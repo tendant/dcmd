@@ -77,8 +77,33 @@ jobs:
           APPLE_ID: ${{ vars.APPLE_ID || secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
 
-      # Says plainly whether the bundle is signed and accepted, rather than
-      # leaving it to be discovered by a user whose Mac refuses to open it.
+      # Tauri notarises the .app and then builds the .dmg around it, so the
+      # disk image is signed but carries no ticket of its own. What a user
+      # downloads is the .dmg, and Gatekeeper assesses the .dmg — an
+      # unnotarised one is refused before anyone reaches the correctly
+      # notarised app inside. So submit and staple it separately.
+      - name: Notarise and staple the .dmg
+        if: startsWith(matrix.os, 'macos') && (vars.APPLE_ID || secrets.APPLE_ID) != ''
+        env:
+          APPLE_ID: ${{ vars.APPLE_ID || secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+        run: |
+          DMG=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/dmg" \
+            -maxdepth 1 -name '*.dmg' | head -1)
+          if [ -z "$DMG" ]; then
+            echo "no .dmg was built — nothing to notarise" >&2
+            exit 1
+          fi
+          echo "submitting: $DMG"
+          xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" --password "$APPLE_PASSWORD" --wait
+          xcrun stapler staple "$DMG"
+
+      # Says plainly whether the bundles are signed and accepted, rather than
+      # leaving it to be discovered by a user whose Mac refuses to open them.
+      # Both are checked: a notarised .app inside an unnotarised .dmg passes
+      # every check made of the .app and still fails on the user's machine.
       - name: Report signing status
         if: startsWith(matrix.os, 'macos')
         run: |
@@ -88,6 +113,15 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP" || echo "NOT SIGNED"
           # The check Gatekeeper actually performs on another machine.
           spctl --assess --type execute --verbose "$APP" || echo "NOT ACCEPTED BY GATEKEEPER"
+
+          DMG=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/dmg" \
+            -maxdepth 1 -name '*.dmg' | head -1)
+          echo "disk image: $DMG"
+          xcrun stapler validate "$DMG" || echo "DMG HAS NO STAPLED TICKET"
+          # -t open is the assessment made of a downloaded disk image, and is
+          # not the same question as -t execute asked of the app.
+          spctl --assess --type open --context context:primary-signature \
+            --verbose "$DMG" || echo "DMG NOT ACCEPTED BY GATEKEEPER"
 
       - uses: actions/upload-artifact@v4
         with:

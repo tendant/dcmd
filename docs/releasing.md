@@ -262,8 +262,32 @@ spctl --assess --type execute --verbose path/to/dcmd.app
 ready reports `accepted` and `source=Notarized Developer ID`. Anything else
 means the download will be refused.
 
+### The .dmg needs notarising too, separately
+
+Tauri notarises the `.app` and then builds the `.dmg` around it, so the disk
+image ends up signed but with no ticket of its own. Every check made of the
+`.app` passes, and the download still fails — because what a user downloads is
+the `.dmg`, and Gatekeeper assesses **that**:
+
+```sh
+xcrun stapler validate path/to.dmg
+spctl --assess --type open --context context:primary-signature --verbose path/to.dmg
+```
+
+`-t open` is the question asked of a disk image; `-t execute` is the question
+asked of an app. They have different answers, and only the first one matters to
+somebody clicking a link. An unnotarised `.dmg` reports `rejected` and
+`source=Unnotarized Developer ID`.
+
+The workflow submits and staples it in a step of its own, after the build:
+
+```sh
+xcrun notarytool submit "$DMG" --apple-id … --team-id … --password … --wait
+xcrun stapler staple "$DMG"
+```
+
 Signing locally works the same way — set the same variables and run
-`pnpm tauri build`.
+`pnpm tauri build`, then staple the `.dmg` by hand as above.
 
 ## Release notes
 
