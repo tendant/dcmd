@@ -28,5 +28,6 @@ export const commandMocks = {
   revealEntry: vi.fn(async () => undefined),
   openTerminal: vi.fn(async () => undefined),
   cancelRemoteConnect: vi.fn(async () => undefined),
+  disconnectRemote: vi.fn(async () => undefined),
   startupInfo: vi.fn(async () => ({ startDir: "/", settings: { version: 1, splitRatio: 0.5, showPlaces: true, left: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 64, modified: 64 } }, right: { sortKey: "name", sortAscending: true, showHidden: false, columns: { size: 64, modified: 64 } }, bookmarks: [], remotes: [] } })),
 };

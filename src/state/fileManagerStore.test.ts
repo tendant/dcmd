@@ -1,24 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../tauri/commands", () => ({
-  listDirectory: vi.fn(async () => []),
-  listRemoteDirectory: vi.fn(async (_a: string, path: string) => ({ path, entries: [] })),
-  sshConfigHosts: vi.fn(async () => ["alpha", "beta"]),
-  revealEntry: vi.fn(async () => undefined),
-  defaultStartDir: vi.fn(async () => "/"),
-  openEntry: vi.fn(async () => undefined),
-  directorySize: vi.fn(async () => 0),
-  cancelDirectorySize: vi.fn(async () => undefined),
-  mkdir: vi.fn(),
-  renameEntry: vi.fn(),
+// The shared mocks, so a command added to the app does not silently break this
+// file — it has drifted before, and the failure names the mock rather than the
+// change that caused it. Only the two returns these tests actually assert on
+// are overridden.
+vi.mock("../tauri/commands", async () => ({
+  ...(await import("../test-utils")).commandMocks,
   trashEntries: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
-  checkConflicts: vi.fn(async () => []),
-  copyEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
-  moveEntriesWith: vi.fn(async () => ({ completed: [], skipped: [], failed: [] })),
-  cancelTransfer: vi.fn(async () => undefined),
-  rsyncTransfer: vi.fn(async () => ({ changes: [], cancelled: false, errors: [] })),
-  logMessage: vi.fn(async () => undefined),
-  openLog: vi.fn(async () => undefined),
   previewFile: vi.fn(async () => ({ kind: "text", content: "hi", truncated: false })),
 }));
 

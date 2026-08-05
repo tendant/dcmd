@@ -66,6 +66,7 @@ pub fn run() {
             commands::list_directory,
             commands::list_remote_directory,
             commands::cancel_remote_connect,
+            commands::disconnect_remote,
             commands::rsync_transfer,
             commands::ssh_config_hosts,
             commands::mark_startup,

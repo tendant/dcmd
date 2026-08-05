@@ -553,8 +553,27 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       };
     }),
 
-  removeRemote: (alias) =>
-    set((state) => ({ remotes: state.remotes.filter((r) => r.alias !== alias) })),
+  removeRemote: (alias) => {
+    set((state) => ({
+      remotes: state.remotes.filter((r) => r.alias !== alias),
+      // Listings belonging to a host the app no longer knows about are not
+      // worth offering back, and their age would go on being reported against
+      // a configuration that has gone.
+      remoteCache: Object.fromEntries(
+        Object.entries(state.remoteCache).filter(([key]) => !key.startsWith(`${alias}:`)),
+      ),
+    }));
+
+    // A pane left sitting on the forgotten host would carry on listing over
+    // SFTP to it, and could no longer be reached by name to leave — the alias
+    // the path bar would need is exactly the one just removed.
+    for (const pane of ["left", "right"] as PaneId[]) {
+      if (get().panes[pane].remote === alias) void get().disconnectPane(pane);
+    }
+
+    // And close the connection, or it outlives the configuration it came from.
+    void commands.disconnectRemote(alias).catch(() => {});
+  },
 
   openPlace: (index, pane) => {
     const { bookmarks, remotes } = get();

@@ -117,6 +117,10 @@ export const openTerminal = (path: string): Promise<void> =>
 export const cancelRemoteConnect = (alias: string): Promise<void> =>
   invoke<void>("cancel_remote_connect", { alias });
 
+/** Closes the session for a host, so the next use reconnects. */
+export const disconnectRemote = (alias: string): Promise<void> =>
+  invoke<void>("disconnect_remote", { alias });
+
 export const directorySize = (path: string): Promise<number> =>
   invoke<number>("directory_size", { path });
 

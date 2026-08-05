@@ -400,6 +400,27 @@ pub async fn cancel_remote_connect(_alias: String) -> Result<(), FsError> {
     Ok(())
 }
 
+/// Closes the session for a host, so the next use reconnects.
+///
+/// Called when a host is forgotten: the ssh connection would otherwise outlive
+/// the configuration it came from, still open to a machine the app no longer
+/// knows anything about.
+#[cfg(unix)]
+#[tauri::command]
+pub async fn disconnect_remote(
+    alias: String,
+    connections: tauri::State<'_, crate::remote::session::Connections>,
+) -> Result<(), FsError> {
+    connections.disconnect(&alias).await;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+#[tauri::command]
+pub async fn disconnect_remote(_alias: String) -> Result<(), FsError> {
+    Ok(())
+}
+
 /// Windows has no ssh multiplexing to build on, so remote browsing is not
 /// available there. Reported plainly rather than the command being absent, which
 /// would surface as an unhelpful "command not found".
