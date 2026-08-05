@@ -20,10 +20,12 @@ jobs:
         include:
           # Apple silicon only. The x86_64 Mac bundle is not built: macos-13
           # was retired on 2025-12-08, and the Intel runners replacing it go
-          # the same way when macos-15 retires in autumn 2027. Intel Macs can
-          # run the aarch64 build under Rosetta 2, which is the trade being
-          # made here — a slower app for a shrinking group, rather than a
-          # target whose runner is already on notice.
+          # the same way when macos-15 retires in autumn 2027.
+          #
+          # That drops Intel Macs entirely rather than slowing them down.
+          # Rosetta 2 runs Intel binaries on Apple silicon, not the reverse, so
+          # there is no fallback: an arm64 bundle does not run there at all.
+          # Deliberate, and it must not be described as anything softer.
           - os: macos-latest
             target: aarch64-apple-darwin
           - os: ubuntu-22.04

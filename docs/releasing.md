@@ -13,14 +13,16 @@ Three targets, because only those runners can produce them:
 | `x86_64-unknown-linux-gnu` | `ubuntu-22.04` | `.AppImage`, `.deb` |
 | `x86_64-pc-windows-msvc` | `windows-latest` | `.msi`, `.exe` |
 
-**macOS is Apple silicon only.** There is no x86_64 `.dmg`. `macos-13` was
-retired on 2025-12-08, and the Intel runners that replaced it retire with
-`macos-15` in autumn 2027, so the target was on a clock either way. Intel Macs
-run the aarch64 build under Rosetta 2 — slower, but it works, and it does not
-put a build in the release that quietly stops being produced.
+**macOS is Apple silicon only, and Intel Macs are not supported.** There is no
+x86_64 `.dmg`. `macos-13` was retired on 2025-12-08 and the Intel runners that
+replaced it retire with `macos-15` in autumn 2027, so the target was on a clock
+either way.
 
-Say so in the release notes. Someone on an Intel Mac who sees one `.dmg` will
-assume it is for them, and they are right, but not obviously.
+Do not soften this into "runs under Rosetta". Rosetta 2 translates **Intel
+binaries onto Apple silicon**, not the reverse; an arm64 bundle does not run on
+an Intel Mac at all. The release notes said otherwise for 0.2.0 and 0.3.0 before
+this was caught, which is worse than saying nothing — someone downloads a `.dmg`
+that cannot open and concludes the app is broken.
 
 ## Cutting a release
 
@@ -294,9 +296,9 @@ Signing locally works the same way — set the same variables and run
 Three things belong in every release until they change. `generate_release_notes`
 produces a commit list and none of this, so it is written by hand:
 
-- **There is one macOS build and it is Apple silicon.** Someone on an Intel Mac
-  seeing a single `.dmg` will assume it is not for them. It is — under Rosetta
-  2 — but only if the notes say so.
+- **The macOS build is Apple silicon only; Intel Macs cannot run it.** State it
+  plainly. The alternative is someone downloading a `.dmg` that will not open
+  and concluding the app is broken rather than that it is not for their machine.
 - **Linux and Windows bundles are unsigned.** Windows SmartScreen warns on an
   unsigned installer; that needs a separate code-signing certificate and is not
   set up. Give the way through: *More info* → *Run anyway*.

@@ -22,9 +22,11 @@ Download from the [latest release](https://github.com/tendant/dcmd/releases/late
 | Windows | `dcmd_*_x64-setup.exe`, `dcmd_*_x64_en-US.msi` |
 
 **macOS is signed and notarised**, disk image and app both, so it opens without
-the "damaged" dialog an unsigned build produces. There is one macOS build and it
-is for Apple silicon; Intel Macs run it under Rosetta 2, because GitHub has
-retired its Intel macOS runners.
+the "damaged" dialog an unsigned build produces.
+
+**Apple silicon only.** The binary is arm64, which an Intel Mac cannot run —
+Rosetta 2 translates the other direction, Intel binaries onto Apple silicon.
+Intel Macs are not supported; building from source is the only route there.
 
 **The Linux and Windows bundles are unsigned.** SmartScreen warns on the Windows
 installer — *More info* → *Run anyway*. Code-signing those needs a separate
