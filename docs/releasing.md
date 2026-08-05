@@ -291,14 +291,20 @@ Signing locally works the same way — set the same variables and run
 
 ## Release notes
 
-Two things belong in every release until they change:
+Three things belong in every release until they change. `generate_release_notes`
+produces a commit list and none of this, so it is written by hand:
 
-- **If the macOS bundles are unsigned**, say so and give the way through:
+- **There is one macOS build and it is Apple silicon.** Someone on an Intel Mac
+  seeing a single `.dmg` will assume it is not for them. It is — under Rosetta
+  2 — but only if the notes say so.
+- **Linux and Windows bundles are unsigned.** Windows SmartScreen warns on an
+  unsigned installer; that needs a separate code-signing certificate and is not
+  set up. Give the way through: *More info* → *Run anyway*.
+- **If a macOS bundle ever ships unsigned**, say so and give the way through:
   right-click → Open, or `xattr -d com.apple.quarantine /Applications/dcmd.app`.
-  Silence here reads as a broken build.
-- **Linux and Windows bundles are unsigned too.** Windows SmartScreen warns on
-  an unsigned installer; that needs a separate code-signing certificate and is
-  not set up.
+  Silence here reads as a broken build. Since v0.2.0 they are signed and
+  notarised, so this should not come up — check the `spctl` lines in the log
+  before assuming it.
 
 ## Known gaps
 

@@ -11,7 +11,26 @@ move, rename and delete work between them without ever reaching for the mouse.
 > command palette are not built yet — see
 > [the design document](DCMD-Design-Document-v0.2.md) for the full scope.
 
-## Running it
+## Install
+
+Download from the [latest release](https://github.com/tendant/dcmd/releases/latest):
+
+| Platform | File |
+| --- | --- |
+| macOS (Apple silicon) | `dcmd_*_aarch64.dmg` |
+| Linux | `dcmd_*_amd64.AppImage`, `dcmd_*_amd64.deb` |
+| Windows | `dcmd_*_x64-setup.exe`, `dcmd_*_x64_en-US.msi` |
+
+**macOS is signed and notarised**, disk image and app both, so it opens without
+the "damaged" dialog an unsigned build produces. There is one macOS build and it
+is for Apple silicon; Intel Macs run it under Rosetta 2, because GitHub has
+retired its Intel macOS runners.
+
+**The Linux and Windows bundles are unsigned.** SmartScreen warns on the Windows
+installer — *More info* → *Run anyway*. Code-signing those needs a separate
+certificate, which is not set up.
+
+## Building it
 
 Requires [Rust](https://rustup.rs), Node 22+ and pnpm.
 
@@ -167,10 +186,11 @@ lift the rule out of the `cfg` into a plain function and test that, so it can be
 checked from any host — `is_invalid_on_windows` is the example.
 
 Cutting a release, and what macOS signing needs, is in
-[docs/releasing.md](docs/releasing.md). The short version: the bundles are
-currently unsigned, so Gatekeeper refuses them on any Mac that did not build
-them, and the certificate required is not the Apple Development one already in
-most keychains.
+[docs/releasing.md](docs/releasing.md). Worth knowing before you touch it: the
+certificate required is a **Developer ID Application** one, not the Apple
+Development certificate already in most keychains, and both the `.app` and the
+`.dmg` around it have to be notarised — Gatekeeper assesses the disk image, and
+a signed-but-unnotarised one is refused with the app inside it untouched.
 
 `DCMD_TRACE_STARTUP=1` makes a release build report startup milestones to
 stderr. Startup currently misses the design document's sub-100ms target; the
