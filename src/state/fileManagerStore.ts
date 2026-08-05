@@ -3,6 +3,7 @@ import type { FileEntry } from "../types/fileEntry";
 import * as commands from "../tauri/commands";
 import type { ConflictPolicy } from "../tauri/commands";
 import { toAppError, isCancellation, type AppError, type ErrorContext } from "../errors";
+import { parseLocation } from "./location";
 
 export type PaneId = "left" | "right";
 
@@ -317,6 +318,12 @@ export interface FileManagerState {
   cancelInlineEdit: (pane: PaneId) => void;
   startEditingPath: (pane: PaneId) => void;
   commitPathEdit: (pane: PaneId, newPath: string) => Promise<void>;
+  /**
+   * Returns a pane to this machine. Without it a pane that has been
+   * connected to a host can only be brought back by clicking a local
+   * bookmark, and not at all if there are none.
+   */
+  disconnectPane: (pane: PaneId) => Promise<void>;
   cancelPathEdit: (pane: PaneId) => void;
   trashSelection: (pane: PaneId) => Promise<void>;
 
@@ -1586,7 +1593,38 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   commitPathEdit: async (pane, newPath) => {
     const state = get();
     state.cancelPathEdit(pane);
-    await state.navigate(pane, newPath);
+
+    // The path bar is the one place a location is typed, so it is where the
+    // scope has to be expressible — otherwise a pane connected to a host has no
+    // way back, whatever is typed into it.
+    const where = parseLocation(newPath, state.remotes.map((r) => r.alias));
+    switch (where.scope) {
+      case "remote":
+        return void state.connectPane(pane, where.alias, where.path);
+      case "local":
+        return void state.connectPane(pane, null, where.path);
+      case "current":
+        // Deliberately not "local": someone on a host typing /var/log means
+        // that host's, and sending them home would be the worse bug.
+        return void state.navigate(pane, where.path);
+    }
+  },
+
+  disconnectPane: async (pane) => {
+    const state = get();
+    const { remote, path } = state.panes[pane];
+    if (!remote) return;
+
+    // The same path is usually meaningless on this machine — /config on a
+    // container, /srv on a build host — so it is offered only when it actually
+    // exists here, and home is the fallback rather than an error.
+    let target = path;
+    try {
+      await commands.listDirectory(path);
+    } catch {
+      target = await commands.defaultStartDir().catch(() => "/");
+    }
+    await state.connectPane(pane, null, target);
   },
 
   cancelPathEdit: (pane) => {

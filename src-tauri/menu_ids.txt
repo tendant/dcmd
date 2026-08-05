@@ -19,6 +19,7 @@ edit_path
 refresh
 bookmark
 add_host
+disconnect
 open_log
 open_terminal
 command_palette

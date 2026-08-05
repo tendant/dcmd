@@ -108,6 +108,25 @@ resumes, it only sends what differs, and a dry run shows what would change
 before anything does. Listings are cached, so going back to a directory does not
 re-fetch it.
 
+**Getting back.** `⌘L` takes a scope as well as a path:
+
+| Typed | Goes to |
+| --- | --- |
+| `/var/log` | that path, **wherever the pane already is** |
+| `build:/srv` | `/srv` on the host `build` |
+| `local:/var/log` | `/var/log` on this machine |
+
+A bare path deliberately stays put: on a host, `/var/log` means that host's.
+Editing `build:` to `local:` is the whole gesture for coming back, and `⌘L`
+pre-fills the prefix so it is visible rather than something you have to know.
+
+**Go → Disconnect from Host** does the same without typing — also in the command
+palette. It lands on the same path if it exists here and your home directory
+otherwise, since `/srv` on a build host usually means nothing locally.
+
+Only a saved alias is read as a host, so `C:\Users` stays a Windows path and a
+file named `notes:draft` stays a file.
+
 Not available on a remote pane: preview, duplicating in place, and dragging out.
 Each says so rather than failing.
 

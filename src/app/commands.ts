@@ -127,6 +127,14 @@ export const COMMANDS: Command[] = [
   { id: "refresh", label: "Refresh", shortcut: `${MOD}R`, group: "Go" },
   { id: "bookmark", label: "Bookmark this folder", shortcut: `${MOD}D`, group: "Go" },
   { id: "add_host", label: "Add host…", group: "Go" },
+  {
+    id: "disconnect",
+    label: "Disconnect from host",
+    group: "Go",
+    // Only offered on a pane that is actually on a host, so the palette does
+    // not suggest returning from somewhere you already are.
+    available: (s) => !!s.panes[s.activePane].remote,
+  },
   { id: "switch_pane", label: "Other pane", shortcut: "Tab", group: "Go" },
   { id: "open_log", label: "Open log", group: "Go" },
 

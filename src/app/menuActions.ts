@@ -49,6 +49,12 @@ export const MENU_ACTIONS: Record<string, (s: FileManagerState) => void> = {
     else s.addBookmark(s.activePane);
   },
   add_host: (s) => void s.requestAddRemote(s.activePane),
+  disconnect: (s) => {
+    if (!s.panes[s.activePane].remote) {
+      return s.setPaneNotice(s.activePane, "This pane is already on this machine");
+    }
+    void s.disconnectPane(s.activePane);
+  },
   open_log: () => void commands.openLog().catch(() => {}),
   open_terminal: (s) => {
     const pane = s.panes[s.activePane];

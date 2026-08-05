@@ -37,6 +37,7 @@ pub mod ids {
     pub const REFRESH: &str = "refresh";
     pub const BOOKMARK: &str = "bookmark";
     pub const ADD_HOST: &str = "add_host";
+    pub const DISCONNECT: &str = "disconnect";
     pub const OPEN_LOG: &str = "open_log";
     pub const OPEN_TERMINAL: &str = "open_terminal";
     pub const COMMAND_PALETTE: &str = "command_palette";
@@ -84,6 +85,7 @@ pub mod ids {
         REFRESH,
         BOOKMARK,
         ADD_HOST,
+        DISCONNECT,
         OPEN_LOG,
         OPEN_TERMINAL,
         COMMAND_PALETTE,
@@ -196,6 +198,10 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             Some("CmdOrCtrl+D"),
         )?)
         .item(&item(ids::ADD_HOST, "Add Host…", None)?)
+        // The way back. Without it a pane that has been connected to a host
+        // can only be returned by clicking a local bookmark, and not at all
+        // when there are none.
+        .item(&item(ids::DISCONNECT, "Disconnect from Host", None)?)
         .separator()
         .item(&item(ids::SWITCH_PANE, "Other Pane  (Tab)", None)?)
         .build()?;

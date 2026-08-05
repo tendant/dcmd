@@ -1,6 +1,7 @@
 import { useRef, useEffect } from "react";
 import { useFileManagerStore, PaneId } from "../state/fileManagerStore";
 import { MOD } from "../platform";
+import { formatLocation } from "../state/location";
 
 interface PathBarProps {
   path: string;
@@ -49,9 +50,14 @@ export function PathBar({ path, paneId, isEditing }: PathBarProps) {
       <input
         ref={inputRef}
         type="text"
-        defaultValue={path}
+        // Pre-filled with the scope, not just the path. It shows where the pane
+        // actually is, and it teaches the syntax in the one place a location is
+        // typed: changing `build:` to `local:` is now the whole gesture for
+        // coming back, and there is otherwise nothing to suggest it is possible.
+        defaultValue={formatLocation(remote, path)}
         onKeyDown={handleKeyDown}
         onBlur={() => cancelPathEdit(paneId)}
+        title="A path, host:path, or local:path"
         className="w-full bg-gray-100 dark:bg-gray-800 px-3 py-2 border-b-2 border-blue-500 text-sm font-mono text-gray-900 dark:text-gray-100 focus:outline-none"
       />
     );
