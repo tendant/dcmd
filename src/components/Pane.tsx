@@ -42,8 +42,6 @@ export function Pane({ paneId }: PaneProps) {
     >
       <PathBar path={paneState.path} paneId={paneId} isEditing={paneState.isEditingPath} />
 
-      {paneState.error && <ErrorBar error={paneState.error} paneId={paneId} />}
-
       {paneState.loading ? (
         <div className="flex-1 flex flex-col items-center justify-center text-gray-500 dark:text-gray-400 p-4">
           <div className="text-lg mb-2">Loading...</div>
@@ -81,6 +79,15 @@ export function Pane({ paneId }: PaneProps) {
           </button>
         </div>
       )}
+
+      {/*
+        Below the list, not above it. Above, appearing shifted every row down —
+        moving the cursor row out from under whatever you were about to press.
+        Here the list loses height from the bottom instead, so nothing you were
+        looking at moves. Directly above the status bar, which is where the
+        quieter tier of message already appears.
+      */}
+      {paneState.error && <ErrorBar error={paneState.error} paneId={paneId} />}
 
       <StatusBar paneId={paneId} />
     </div>

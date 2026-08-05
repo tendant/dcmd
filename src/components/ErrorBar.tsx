@@ -8,7 +8,13 @@ import { useFileManagerStore, type PaneId } from "../state/fileManagerStore";
  * The raw backend text is kept behind a disclosure rather than shown by default:
  * it carries absolute paths and OS error codes that help when diagnosing but only
  * obscure things for someone trying to get work done. Dismissable, because an
- * error the user has read and understood should not sit there permanently.
+ * error the user has read and understood should not sit there permanently — with
+ * Escape as well as the ✕, since reaching for the mouse is the thing this app
+ * exists to avoid.
+ *
+ * Only failures reach here. The app merely declining — "Nothing to copy" — is a
+ * notice in the status bar, because a bar this size is a great deal of ceremony
+ * for reporting that a keypress did nothing.
  */
 export function ErrorBar({ error, paneId }: { error: AppError; paneId: PaneId }) {
   const setPaneError = useFileManagerStore((s) => s.setPaneError);
@@ -18,7 +24,7 @@ export function ErrorBar({ error, paneId }: { error: AppError; paneId: PaneId })
   const hasDetail = !!error.detail && error.detail !== error.message;
 
   return (
-    <div className="border-b border-red-300 bg-red-50 px-3 py-2 text-sm dark:border-red-800 dark:bg-red-950">
+    <div className="border-t border-red-300 bg-red-50 px-3 py-2 text-sm dark:border-red-800 dark:bg-red-950">
       <div className="flex items-start gap-2">
         <span aria-hidden className="mt-0.5 shrink-0">
           ⚠️
