@@ -72,11 +72,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$CASK"
-          git commit -m "dcmd ${version}
-
-          Checksum taken from the published release asset, which is the file the
-          cask's own url serves.
-
-          Bumped by ${GITHUB_REPOSITORY}@${GITHUB_SHA} on release ${TAG}."
+          # One -m per paragraph. A multi-line string here would be indented by
+          # the YAML block and carry that indentation into the commit body.
+          git commit \
+            -m "dcmd ${version}" \
+            -m "Checksum taken from the published release asset, which is the file the cask's own url serves." \
+            -m "Bumped by ${GITHUB_REPOSITORY}@${GITHUB_SHA} on release ${TAG}."
           git push
           echo "Cask bumped from ${current} to ${version}."
