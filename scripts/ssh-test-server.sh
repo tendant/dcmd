@@ -15,6 +15,27 @@ DIR="${TMPDIR:-/tmp}/dcmd-ssh-test"
 KEY="$DIR/id_test"
 CONFIG="$DIR/ssh_config"
 
+# Two things the image lacks that the tests it exists for need.
+#
+# rsync, because transfers to and from a remote run it on the far side — without
+# it four live tests fail with "bash: line 1: rsync: command not found".
+#
+# Connection headroom, because cargo runs tests in parallel and sshd ships with
+# `MaxStartups 10`: past ten unauthenticated connections at once it starts
+# refusing at random, and rsync reports that as "connection unexpectedly closed
+# (0 bytes received so far)" — which reads like a bug in the transfer rather
+# than the server declining to talk. The live config is the one sshd was started
+# with, not /etc/ssh/sshd_config.
+provision() {
+  docker exec "$NAME" apk add --no-cache rsync >/dev/null 2>&1 \
+    || { echo "could not install rsync into $NAME" >&2; exit 1; }
+  docker exec "$NAME" sh -c '
+    sed -i "/^#\?MaxStartups/d; /^#\?MaxSessions/d" /config/sshd/sshd_config
+    printf "MaxStartups 100:30:200\nMaxSessions 100\n" >> /config/sshd/sshd_config
+    kill -HUP "$(pgrep -f "sshd.*listener" | head -1)"
+  ' >/dev/null 2>&1 || { echo "could not raise MaxStartups in $NAME" >&2; exit 1; }
+}
+
 start() {
   command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
   mkdir -p "$DIR"
@@ -41,6 +62,7 @@ EOF
   for _ in $(seq 1 30); do
     if ssh -F "$CONFIG" -o ConnectTimeout=2 dcmd-test true 2>/dev/null; then
       echo " ready"
+      provision
       seed
       echo
       echo "Run the live tests with:"
