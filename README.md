@@ -6,7 +6,7 @@ React and Rust.
 Two panes side by side: one is the source, the other the destination. Copy,
 move, rename and delete work between them without ever reaching for the mouse.
 
-> **Status: 0.2, usable.** Browsing, file operations, bookmarks, SSH hosts,
+> **Status: 0.3, usable.** Browsing, file operations, bookmarks, SSH hosts,
 > preview and the command palette all work and are covered by tests. Recursive
 > filename search is not built yet — see
 > [the design document](DCMD-Design-Document-v0.2.md) for the full scope.
