@@ -13,7 +13,28 @@ move, rename and delete work between them without ever reaching for the mouse.
 
 ## Install
 
-Download from the [latest release](https://github.com/tendant/dcmd/releases/latest):
+### macOS — Homebrew
+
+```sh
+brew install --cask tendant/tap/dcmd
+```
+
+Then `brew upgrade --cask dcmd` for later versions. The cask is bumped
+automatically when a release is published, so it does not lag behind.
+
+To remove it along with its settings and logs:
+
+```sh
+brew uninstall --zap --cask dcmd
+```
+
+It is a tap rather than the official `homebrew-cask`, which requires a project
+to have 75 stars, 30 forks or 30 watchers. The cask is written to the same rules,
+so submitting it later is a move rather than a rewrite.
+
+### Or download directly
+
+From the [latest release](https://github.com/tendant/dcmd/releases/latest):
 
 | Platform | File |
 | --- | --- |
