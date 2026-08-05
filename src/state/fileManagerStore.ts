@@ -1617,16 +1617,12 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     // scope has to be expressible — otherwise a pane connected to a host has no
     // way back, whatever is typed into it.
     const where = parseLocation(newPath, state.remotes.map((r) => r.alias));
-    switch (where.scope) {
-      case "remote":
-        return void state.connectPane(pane, where.alias, where.path);
-      case "local":
-        return void state.connectPane(pane, null, where.path);
-      case "current":
-        // Deliberately not "local": someone on a host typing /var/log means
-        // that host's, and sending them home would be the worse bug.
-        return void state.navigate(pane, where.path);
-    }
+    // connectPane either way, never navigate: the field carries the machine as
+    // well as the path, so committing it has to be able to change machine.
+    // navigate alone would keep whichever host the pane was already on.
+    return void (where.scope === "remote"
+      ? state.connectPane(pane, where.alias, where.path)
+      : state.connectPane(pane, null, where.path));
   },
 
   disconnectPane: async (pane) => {

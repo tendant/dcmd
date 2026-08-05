@@ -7,32 +7,36 @@
  * has to be expressible where the location is typed.
  */
 export type Location =
-  /** Explicitly this machine: `local:/var/log`. */
+  /** This machine. A bare path, or an explicit `local:/var/log`. */
   | { scope: "local"; path: string }
   /** A named host: `build:/srv`. The alias must be one that is known. */
-  | { scope: "remote"; alias: string; path: string }
-  /** No prefix — wherever the pane already is. */
-  | { scope: "current"; path: string };
+  | { scope: "remote"; alias: string; path: string };
 
-/** The word that means this machine, so there is a way back by typing. */
+/** The word that means this machine, kept for when being explicit reads better. */
 export const LOCAL_SCOPE = "local";
 
 /**
  * Reads `alias:path`, `local:path`, or a bare path.
  *
- * A bare path deliberately means *stay where you are*. Someone on a host typing
- * `/var/log` means that host's `/var/log`; sending them home instead would be a
- * worse bug than the one this fixes.
+ * A bare path means this machine. What is in the field is the whole location,
+ * so removing the host from it is how you say "not that host" — the obvious
+ * reading, and the one people reach for.
+ *
+ * That is only safe because editing the field does not silently drop the host:
+ * `⌘L` selects the path and leaves the prefix, so typing a new path stays on
+ * the machine you are on. Removing the prefix has to be deliberate. The two
+ * behaviours are a pair; changing either alone makes typing a path jump
+ * machines by accident.
  *
  * An alias is only recognised when it is one the user has actually saved. That
- * keeps `C:\Users` on Windows a path rather than a host called `C`, and means a
- * file named `notes:draft` in a relative path is not mistaken for a host
- * either — guessing from the shape of the string cannot distinguish those.
+ * keeps `C:\Users` on Windows a path rather than a host called `C`, and a file
+ * named `notes:draft` a file — guessing from the shape of the string cannot
+ * distinguish those.
  */
 export function parseLocation(input: string, knownAliases: readonly string[]): Location {
   const trimmed = input.trim();
   const colon = trimmed.indexOf(":");
-  if (colon <= 0) return { scope: "current", path: trimmed };
+  if (colon <= 0) return { scope: "local", path: trimmed };
 
   const prefix = trimmed.slice(0, colon);
   const rest = trimmed.slice(colon + 1);
@@ -41,8 +45,8 @@ export function parseLocation(input: string, knownAliases: readonly string[]): L
   if (knownAliases.includes(prefix)) return { scope: "remote", alias: prefix, path: rest };
 
   // Not a scope at all: a Windows drive, or a path that happens to contain a
-  // colon. Left alone rather than guessed at.
-  return { scope: "current", path: trimmed };
+  // colon. A path on this machine, then, and left exactly as typed.
+  return { scope: "local", path: trimmed };
 }
 
 /**

@@ -28,11 +28,12 @@ describe("getting back to this machine", () => {
     expect(left().path).toBe("/var/log");
   });
 
-  it("stays on the host for a bare path", async () => {
-    // The rule that keeps this from being a worse bug: someone on a host typing
-    // an absolute path means that host's copy of it.
+  it("goes local for a bare path, since removing the host is how you say so", async () => {
+    // Safe only because Cmd+L selects the path and leaves the prefix, so a
+    // typed path stays on the host and losing the prefix is deliberate. The
+    // two behaviours are a pair — see the note in location.ts.
     await state().commitPathEdit("left", "/var/log");
-    expect(left().remote).toBe("build");
+    expect(left().remote).toBeNull();
     expect(left().path).toBe("/var/log");
   });
 
@@ -50,7 +51,7 @@ describe("getting back to this machine", () => {
 
   it("does not read an unknown prefix as a host", async () => {
     await state().commitPathEdit("left", "staging:/srv");
-    expect(left().remote).toBe("build");
+    expect(left().remote).toBeNull();
     expect(left().path).toBe("staging:/srv");
   });
 });

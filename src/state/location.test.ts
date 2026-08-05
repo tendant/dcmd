@@ -19,18 +19,19 @@ describe("parseLocation", () => {
     });
   });
 
-  it("treats a bare path as wherever the pane already is", () => {
-    // The important one. Someone on a host typing /var/log means that host's
-    // /var/log; sending them home would be worse than the bug this fixes.
+  it("treats a bare path as this machine", () => {
+    // What is in the field is the whole location, so removing the host from it
+    // is how you say "not that host". Safe only because editing the field
+    // leaves the prefix alone — see the note in location.ts.
     expect(parseLocation("/var/log", known)).toEqual({
-      scope: "current",
+      scope: "local",
       path: "/var/log",
     });
   });
 
   it("does not invent a host from an unknown prefix", () => {
     expect(parseLocation("staging:/srv", known)).toEqual({
-      scope: "current",
+      scope: "local",
       path: "staging:/srv",
     });
   });
@@ -39,20 +40,20 @@ describe("parseLocation", () => {
     // A pane called "C" is not a thing, and treating it as one would make every
     // Windows path unusable.
     expect(parseLocation("C:\\Users\\lei", known)).toEqual({
-      scope: "current",
+      scope: "local",
       path: "C:\\Users\\lei",
     });
   });
 
   it("leaves a path that merely contains a colon alone", () => {
     expect(parseLocation("./notes:draft", known)).toEqual({
-      scope: "current",
+      scope: "local",
       path: "./notes:draft",
     });
   });
 
   it("ignores a leading colon rather than reading an empty alias", () => {
-    expect(parseLocation(":/srv", known)).toEqual({ scope: "current", path: ":/srv" });
+    expect(parseLocation(":/srv", known)).toEqual({ scope: "local", path: ":/srv" });
   });
 
   it("takes local: with nothing after it as the root", () => {

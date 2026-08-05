@@ -121,14 +121,17 @@ mean retyping where you are.
 
 | Typed | Goes to |
 | --- | --- |
-| `/var/log` | that path, **wherever the pane already is** |
+| `/var/log` | `/var/log` **on this machine** |
 | `build:/srv` | `/srv` on the host `build` |
-| `local:/var/log` | `/var/log` on this machine |
+| `local:/var/log` | the same as the first, said explicitly |
 
-A bare path deliberately stays put: on a host, `/var/log` means that host's.
-`⌘L` pre-fills the prefix and selects only the path after it, so typing changes
-where you are going without changing which machine — the prefix goes only if you
-remove it deliberately.
+The field holds the whole location, host included, so deleting the host from it
+is how you say "not that host".
+
+That works because `⌘L` selects the path and leaves the prefix: typing a new
+path keeps you on the machine you are on, and losing the prefix takes a
+deliberate edit. The two behaviours are a pair — either one alone would make
+typing a path jump machines by accident.
 
 **Go → Disconnect from Host** does the same without typing — also in the command
 palette. It lands on the same path if it exists here and your home directory
