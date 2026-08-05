@@ -38,6 +38,8 @@ pub mod ids {
     pub const BOOKMARK: &str = "bookmark";
     pub const ADD_HOST: &str = "add_host";
     pub const OPEN_LOG: &str = "open_log";
+    pub const OPEN_TERMINAL: &str = "open_terminal";
+    pub const COMMAND_PALETTE: &str = "command_palette";
     pub const SWITCH_PANE: &str = "switch_pane";
     pub const SELECT_ALL: &str = "select_all";
     pub const DESELECT_ALL: &str = "deselect_all";
@@ -83,6 +85,8 @@ pub mod ids {
         BOOKMARK,
         ADD_HOST,
         OPEN_LOG,
+        OPEN_TERMINAL,
+        COMMAND_PALETTE,
         SWITCH_PANE,
         SELECT_ALL,
         DESELECT_ALL,
@@ -161,6 +165,13 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .separator()
         .item(&item(ids::REVEAL, "Reveal in File Browser", None)?)
         .item(&item(ids::COPY_PATH, "Copy Path", None)?)
+        // Acts on the pane's directory, not on the row, so it is available
+        // whatever the cursor is on — including an empty directory.
+        .item(&item(
+            ids::OPEN_TERMINAL,
+            "Open Terminal Here",
+            Some("CmdOrCtrl+Shift+T"),
+        )?)
         .separator()
         .item(&item(
             ids::TRASH,
@@ -232,6 +243,15 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .build()?;
 
     let view = SubmenuBuilder::new(app, "View")
+        // Shift+P rather than the Cmd+P the design document specified: Cmd+P is
+        // Print nearly everywhere, and in the editors people know this pattern
+        // from it opens files, not commands.
+        .item(&item(
+            ids::COMMAND_PALETTE,
+            "Command Palette…",
+            Some("CmdOrCtrl+Shift+P"),
+        )?)
+        .separator()
         .item(&sort)
         .item(&item(
             ids::TOGGLE_HIDDEN,

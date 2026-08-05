@@ -50,6 +50,18 @@ export const MENU_ACTIONS: Record<string, (s: FileManagerState) => void> = {
   },
   add_host: (s) => void s.requestAddRemote(s.activePane),
   open_log: () => void commands.openLog().catch(() => {}),
+  open_terminal: (s) => {
+    const pane = s.panes[s.activePane];
+    // A remote pane's path exists on the far host, and opening a local shell
+    // there would land somewhere else entirely — or nowhere.
+    if (pane.remote) {
+      return s.setPaneError(s.activePane, "Cannot open a terminal on a remote pane");
+    }
+    void commands
+      .openTerminal(pane.path)
+      .catch((err) => s.reportError(s.activePane, err));
+  },
+  command_palette: (s) => s.openPalette(),
   switch_pane: (s) => s.setActivePane(s.activePane === "left" ? "right" : "left"),
 
   select_all: (s) => s.selectAll(s.activePane),

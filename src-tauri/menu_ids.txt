@@ -20,6 +20,8 @@ refresh
 bookmark
 add_host
 open_log
+open_terminal
+command_palette
 switch_pane
 select_all
 deselect_all

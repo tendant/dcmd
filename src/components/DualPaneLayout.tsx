@@ -5,6 +5,7 @@ import { TransferProgressBar } from "./TransferProgressBar";
 import { PaneDivider } from "./PaneDivider";
 import { ContextMenu } from "./ContextMenu";
 import { PreviewOverlay } from "./PreviewOverlay";
+import { CommandPalette } from "./CommandPalette";
 import { PlacesBar } from "./PlacesBar";
 import { useFileManagerStore } from "../state/fileManagerStore";
 
@@ -42,6 +43,7 @@ export function DualPaneLayout() {
       <Dialog />
       <ContextMenu />
       <PreviewOverlay />
+      <CommandPalette />
     </div>
   );
 }

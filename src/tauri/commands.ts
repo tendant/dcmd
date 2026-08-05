@@ -106,6 +106,10 @@ export const openEntry = (path: string): Promise<void> =>
 export const revealEntry = (path: string): Promise<void> =>
   invoke<void>("reveal_entry", { path });
 
+/** Opens the system terminal at `path`, which must be a directory. */
+export const openTerminal = (path: string): Promise<void> =>
+  invoke<void>("open_terminal", { path });
+
 export const directorySize = (path: string): Promise<number> =>
   invoke<number>("directory_size", { path });
 

@@ -409,6 +409,101 @@ pub async fn reveal_entry(path: String) -> Result<(), FsError> {
     .map_err(|e| FsError::Io(format!("task join error: {e}")))?
 }
 
+/// One way of starting a terminal: the program, and the arguments it needs.
+///
+/// `open -a Terminal` on macOS takes the directory as an argument; everything
+/// else inherits it from the working directory of the spawned process. Both are
+/// set, so a candidate that ignores one still lands in the right place.
+#[derive(Debug, PartialEq, Eq)]
+pub struct TerminalLaunch {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+/// What to try, in order.
+///
+/// `$TERMINAL` first: a preference stated in the environment should beat
+/// whatever the platform happens to ship, and on Linux there is no other way to
+/// know which of a dozen terminals someone actually uses.
+///
+/// A plain function rather than logic buried in `#[cfg]`, so the ordering rule
+/// is testable from any host — only the platform-specific tail differs.
+pub fn terminal_launches(env_terminal: Option<&str>, dir: &str) -> Vec<TerminalLaunch> {
+    let plain = |program: &str| TerminalLaunch {
+        program: program.to_string(),
+        args: Vec::new(),
+    };
+    let mut out = Vec::new();
+
+    if let Some(t) = env_terminal.map(str::trim).filter(|t| !t.is_empty()) {
+        out.push(plain(t));
+    }
+
+    if cfg!(target_os = "macos") {
+        out.push(TerminalLaunch {
+            program: "open".to_string(),
+            args: vec!["-a".to_string(), "Terminal".to_string(), dir.to_string()],
+        });
+    } else if cfg!(target_os = "windows") {
+        out.push(TerminalLaunch {
+            program: "wt".to_string(),
+            args: vec!["-d".to_string(), dir.to_string()],
+        });
+        out.push(plain("cmd"));
+    } else {
+        // x-terminal-emulator is Debian's alternatives symlink and respects a
+        // system-wide choice, so it goes before any specific terminal.
+        for program in [
+            "x-terminal-emulator",
+            "gnome-terminal",
+            "konsole",
+            "xfce4-terminal",
+            "alacritty",
+            "kitty",
+            "xterm",
+        ] {
+            out.push(plain(program));
+        }
+    }
+
+    out
+}
+
+/// Opens a terminal at `path`.
+///
+/// Tries each candidate and keeps the last failure, so a machine with none of
+/// them installed gets a message naming what was attempted rather than silence.
+#[tauri::command]
+pub async fn open_terminal(path: String) -> Result<(), FsError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = PathBuf::from(&path);
+        if !dir.is_dir() {
+            return Err(FsError::NotADirectory(path));
+        }
+
+        let env_terminal = std::env::var("TERMINAL").ok();
+        let mut last: Option<String> = None;
+        for launch in terminal_launches(env_terminal.as_deref(), &path) {
+            // Not waited on: a terminal outlives the click that opened it, and
+            // blocking here would hold a blocking-pool thread for its lifetime.
+            match std::process::Command::new(&launch.program)
+                .args(&launch.args)
+                .current_dir(&dir)
+                .spawn()
+            {
+                Ok(_) => return Ok(()),
+                Err(e) => last = Some(format!("{} ({e})", launch.program)),
+            }
+        }
+        Err(FsError::Io(format!(
+            "could not open a terminal; last tried {}",
+            last.as_deref().unwrap_or("nothing"),
+        )))
+    })
+    .await
+    .map_err(|e| FsError::Io(format!("task join error: {e}")))?
+}
+
 /// Cancellation flags for in-flight directory size walks, keyed by path.
 #[derive(Default)]
 pub struct SizeCalculations(Mutex<HashMap<String, Arc<AtomicBool>>>);
@@ -474,4 +569,46 @@ pub async fn trash_entries(paths: Vec<String>) -> Result<TransferReport, FsError
     tauri::async_runtime::spawn_blocking(move || operations::trash::trash_paths_reported(&paths))
         .await
         .map_err(|e| FsError::Io(format!("task join error: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The one rule that holds on every platform: an explicit preference wins.
+    #[test]
+    fn env_terminal_is_tried_first() {
+        let launches = terminal_launches(Some("wezterm"), "/tmp");
+        assert_eq!(launches[0].program, "wezterm");
+        assert!(launches[0].args.is_empty());
+        // And it does not replace the platform defaults, which remain as fallback.
+        assert!(launches.len() > 1);
+    }
+
+    #[test]
+    fn blank_env_terminal_is_ignored() {
+        // An exported-but-empty TERMINAL is common in shell profiles, and
+        // spawning "" fails in a way that would mask the real candidates.
+        for value in ["", "   "] {
+            let launches = terminal_launches(Some(value), "/tmp");
+            assert_ne!(launches[0].program, value.to_string());
+        }
+        assert_eq!(
+            terminal_launches(None, "/tmp"),
+            terminal_launches(Some("  "), "/tmp"),
+        );
+    }
+
+    #[test]
+    fn there_is_always_something_to_try() {
+        assert!(!terminal_launches(None, "/tmp").is_empty());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_passes_the_directory_as_an_argument() {
+        let launches = terminal_launches(None, "/tmp/some dir");
+        assert_eq!(launches[0].program, "open");
+        assert_eq!(launches[0].args.last().unwrap(), "/tmp/some dir");
+    }
 }

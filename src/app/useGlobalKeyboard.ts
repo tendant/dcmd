@@ -19,7 +19,7 @@ export function useGlobalKeyboard() {
 
       // A modal owns the keyboard while it is open, or typing would land in the
       // filter behind it. Each handles its own Escape.
-      if (store.dialog || store.preview) return;
+      if (store.dialog || store.preview || store.palette) return;
 
       // Don't intercept when typing in inputs or textareas
       if (

@@ -182,17 +182,18 @@ Filename search only.
 
 ## Command Palette
 
-Cmd/Ctrl + P
+Cmd/Ctrl + Shift + P
 
-Commands:
+Not Cmd+P, as first specified: that is Print nearly everywhere, and in the
+editors people know this pattern from it opens files rather than commands.
 
--   Copy
--   Move
--   Rename
--   Delete
--   Refresh
--   New Folder
--   Open Terminal
+Every command the menu can dispatch, rather than the short list first sketched
+here — the palette is built from the same registry the menu ids are checked
+against, so a command cannot exist without appearing in it. Each row shows its
+shortcut, which is what makes the palette a way of *learning* the keyboard
+rather than a way of avoiding it.
+
+Matching is on a subsequence, so "nf" finds New folder.
 
 ------------------------------------------------------------------------
 

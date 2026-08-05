@@ -81,6 +81,20 @@ export interface PreviewState {
   error: string | null;
 }
 
+/**
+ * The command palette, when open.
+ *
+ * Holds only what the user has typed and where the highlight is; which commands
+ * match is derived at render time. Storing the matches would mean recomputing
+ * them here whenever anything else in the store changed, since availability
+ * depends on the whole state.
+ */
+export interface PaletteState {
+  query: string;
+  /** Index into the *matching* commands, not into the full registry. */
+  index: number;
+}
+
 export type DialogState =
   | {
       kind: "conflict";
@@ -206,6 +220,8 @@ export interface FileManagerState {
    * not one of those, even though both take over the keyboard while open.
    */
   preview: PreviewState | null;
+  /** The command palette, if open. Takes the keyboard while it is. */
+  palette: PaletteState | null;
   transfer: ActiveTransfer | null;
 
   setActivePane: (pane: PaneId) => void;
@@ -300,6 +316,11 @@ export interface FileManagerState {
   duplicateSelection: (pane: PaneId) => Promise<void>;
   openPreview: (pane: PaneId) => Promise<void>;
   closePreview: () => void;
+  openPalette: () => void;
+  closePalette: () => void;
+  setPaletteQuery: (query: string) => void;
+  /** Moves the highlight, clamped by the caller's current match count. */
+  movePaletteIndex: (delta: number, matchCount: number) => void;
   setTransferProgress: (p: commands.TransferProgress) => void;
   cancelTransfer: () => void;
 }
@@ -855,7 +876,22 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
 
   dialog: null,
   preview: null,
+  palette: null,
   transfer: null,
+
+  openPalette: () => set({ palette: { query: "", index: 0 } }),
+  closePalette: () => set({ palette: null }),
+  // Typing resets the highlight: the row under it is almost never the row the
+  // narrowed list now puts first, and running the wrong command is worse here
+  // than anywhere else in the app.
+  setPaletteQuery: (query) => set({ palette: { query, index: 0 } }),
+  movePaletteIndex: (delta, matchCount) =>
+    set((state) => {
+      if (!state.palette || matchCount === 0) return {};
+      // Wraps, so Up from the first row reaches the last without a long hold.
+      const next = (state.palette.index + delta + matchCount) % matchCount;
+      return { palette: { ...state.palette, index: next } };
+    }),
 
   setTransferProgress: (p) =>
     set((state) =>

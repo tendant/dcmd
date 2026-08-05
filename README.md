@@ -6,9 +6,9 @@ React and Rust.
 Two panes side by side: one is the source, the other the destination. Copy,
 move, rename and delete work between them without ever reaching for the mouse.
 
-> **Status: 0.2, usable.** Browsing, file operations, bookmarks, SSH hosts and
-> preview all work and are covered by tests. Recursive filename search and the
-> command palette are not built yet — see
+> **Status: 0.2, usable.** Browsing, file operations, bookmarks, SSH hosts,
+> preview and the command palette all work and are covered by tests. Recursive
+> filename search is not built yet — see
 > [the design document](DCMD-Design-Document-v0.2.md) for the full scope.
 
 ## Install
@@ -48,6 +48,7 @@ window `pnpm tauri dev` opens. The app says so rather than failing silently.
 
 | Action | Keys |
 | --- | --- |
+| Command palette | `⌘⇧P` / `Ctrl+Shift+P` |
 | Switch pane | `Tab` |
 | Open file or enter folder | `Enter`, or double-click |
 | Go up | `Backspace` |
@@ -71,6 +72,7 @@ window `pnpm tauri dev` opens. The app says so rather than failing silently.
 | Duplicate here | `⌘⇧D` |
 | Move to Trash | `F8` or `⌘⌫` |
 | Preview | `F3` |
+| Open terminal here | `⌘⇧T` / `Ctrl+Shift+T` |
 | Select all / none / invert | `⌘A` / `⌘⇧A` / `⌘I` |
 | Show or hide the places bar | `⌘B` |
 | Open a bookmark or host | `⌘⇧1`–`⌘⇧9` |

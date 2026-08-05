@@ -73,6 +73,7 @@ pub fn run() {
             commands::default_start_dir,
             commands::open_entry,
             commands::reveal_entry,
+            commands::open_terminal,
             commands::directory_size,
             commands::cancel_directory_size,
             commands::mkdir,
