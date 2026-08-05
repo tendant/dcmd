@@ -24,7 +24,19 @@ export const MENU_ACTIONS: Record<string, (s: FileManagerState) => void> = {
   },
   copy_path: (s) => {
     const entry = entryAtCursor(s.panes[s.activePane]);
-    if (entry) void navigator.clipboard.writeText(entry.path).catch(() => {});
+    if (!entry) return s.setPaneNotice(s.activePane, "No row to copy the path of");
+    // Reported both ways. Swallowing the rejection meant a clipboard write that
+    // never happened looked exactly like one that did — nothing changed on
+    // screen either way, because there was no confirmation either.
+    void navigator.clipboard.writeText(entry.path).then(
+      () => s.setPaneNotice(s.activePane, `Copied ${entry.path}`),
+      (err: unknown) =>
+        s.setPaneError(s.activePane, {
+          kind: "unknown",
+          message: "Could not copy the path to the clipboard.",
+          detail: String(err),
+        }),
+    );
   },
   trash: (s) => s.requestTrash(s.activePane),
   preview: (s) => void s.openPreview(s.activePane),
