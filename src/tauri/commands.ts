@@ -68,6 +68,8 @@ export interface Settings {
 
 export interface StartupInfo {
   startDir: string;
+  /** Where `~` points on this machine. */
+  homeDir: string;
   settings: Settings;
 }
 

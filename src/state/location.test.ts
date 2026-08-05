@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatLocation, parseLocation } from "./location";
+import { expandHome, formatLocation, parseLocation } from "./location";
 
 const known = ["build", "web"];
 
@@ -84,5 +84,37 @@ describe("formatLocation", () => {
 
   it("leaves a local path bare, since that is the ordinary case", () => {
     expect(formatLocation(null, "/var/log")).toBe("/var/log");
+  });
+});
+
+describe("expandHome", () => {
+  const home = "/Users/lei";
+
+  it("turns a bare tilde into the home directory", () => {
+    // Nothing below this expands `~`: unexpanded, it is looked up as a
+    // directory named `~` and reported missing.
+    expect(expandHome("~", home)).toBe("/Users/lei");
+  });
+
+  it("keeps what follows the tilde", () => {
+    expect(expandHome("~/Documents/notes", home)).toBe("/Users/lei/Documents/notes");
+  });
+
+  it("leaves an absolute path alone", () => {
+    expect(expandHome("/var/log", home)).toBe("/var/log");
+  });
+
+  it("leaves a tilde in the middle of a path alone", () => {
+    expect(expandHome("/tmp/~backup", home)).toBe("/tmp/~backup");
+  });
+
+  it("leaves ~someone alone rather than guessing", () => {
+    // That needs a lookup of another user's home directory, which this cannot
+    // answer — better to fail honestly than to invent the wrong path.
+    expect(expandHome("~root/data", home)).toBe("~root/data");
+  });
+
+  it("does nothing when home is unknown", () => {
+    expect(expandHome("~", "")).toBe("~");
   });
 });

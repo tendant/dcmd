@@ -124,6 +124,7 @@ mean retyping where you are.
 | `/var/log` | `/var/log` **on this machine** |
 | `build:/srv` | `/srv` on the host `build` |
 | `local:/var/log` | the same as the first, said explicitly |
+| `~`, `~/Documents` | your home directory, on whichever machine the pane is on |
 
 The field holds the whole location, host included, so deleting the host from it
 is how you say "not that host".

@@ -88,3 +88,29 @@ describe("the disconnect command", () => {
     expect(commands.defaultStartDir).not.toHaveBeenCalled();
   });
 });
+
+describe("a tilde on this machine", () => {
+  it("goes home, as it already did on a host", async () => {
+    // The same input worked on a server — resolve_path handles it there — and
+    // failed at home, where nothing expanded it.
+    useFileManagerStore.setState({ homeDir: "/Users/someone" });
+    await state().commitPathEdit("left", "~");
+    expect(left().remote).toBeNull();
+    expect(left().path).toBe("/Users/someone");
+  });
+
+  it("keeps what follows it", async () => {
+    useFileManagerStore.setState({ homeDir: "/Users/someone" });
+    await state().commitPathEdit("left", "~/Documents");
+    expect(left().path).toBe("/Users/someone/Documents");
+  });
+
+  it("leaves a host's tilde for the host to resolve", async () => {
+    // The far side knows its own home; this machine does not, and expanding
+    // here would send the wrong path across.
+    useFileManagerStore.setState({ homeDir: "/Users/someone" });
+    await state().commitPathEdit("left", "build:~");
+    expect(left().remote).toBe("build");
+    expect(left().path).toBe("~");
+  });
+});

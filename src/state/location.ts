@@ -50,6 +50,26 @@ export function parseLocation(input: string, knownAliases: readonly string[]): L
 }
 
 /**
+ * Turns a leading `~` into the home directory.
+ *
+ * `~` is a shell convention, not a filesystem one: nothing below this expands
+ * it, so an unexpanded one is looked up as a directory that happens to be named
+ * `~` and reported as missing. A host pane already resolved it — SFTP has the
+ * same problem and `resolve_path` handles it there — which left the same input
+ * working on a server and failing at home.
+ *
+ * Only `~` and `~/…` are expanded. `~someone` needs a lookup of that user's
+ * home directory, which is not something this can answer, so it is left alone
+ * to fail honestly rather than being turned into the wrong path.
+ */
+export function expandHome(path: string, home: string): string {
+  if (!home) return path;
+  if (path === "~") return home;
+  if (path.startsWith("~/")) return home + path.slice(1);
+  return path;
+}
+
+/**
  * How a location reads back, for the path bar and for titles.
  *
  * Local paths carry no prefix: that is the ordinary case and prefixing it would

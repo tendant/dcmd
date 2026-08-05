@@ -19,6 +19,12 @@ use tauri::Emitter;
 #[serde(rename_all = "camelCase")]
 pub struct StartupInfo {
     pub start_dir: String,
+    /// Where `~` points on this machine.
+    ///
+    /// Sent separately from `start_dir` even though they are the same today:
+    /// one is where to open, the other is what a tilde means, and a later
+    /// change to the first must not silently redefine the second.
+    pub home_dir: String,
     pub settings: crate::settings::Settings,
 }
 
@@ -41,6 +47,7 @@ pub async fn startup_info(app: tauri::AppHandle) -> Result<StartupInfo, FsError>
         Err(_) => crate::settings::Settings::default(),
     };
     Ok(StartupInfo {
+        home_dir: start_dir.clone(),
         start_dir,
         settings,
     })

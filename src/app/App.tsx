@@ -50,8 +50,9 @@ export function App() {
     }
 
     const initializePanes = async () => {
-      const { startDir, settings } = await commands.startupInfo();
+      const { startDir, homeDir, settings } = await commands.startupInfo();
       const store = useFileManagerStore.getState();
+      store.setHomeDir(homeDir);
       store.applySettings(settings);
       saver.prime(settings);
       // Both panes open on the same directory and neither depends on the other,

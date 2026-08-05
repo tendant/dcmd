@@ -3,7 +3,7 @@ import type { FileEntry } from "../types/fileEntry";
 import * as commands from "../tauri/commands";
 import type { ConflictPolicy } from "../tauri/commands";
 import { toAppError, isCancellation, type AppError, type ErrorContext } from "../errors";
-import { parseLocation } from "./location";
+import { expandHome, parseLocation } from "./location";
 
 export type PaneId = "left" | "right";
 
@@ -211,6 +211,8 @@ export interface FileManagerState {
   bookmarks: commands.Bookmark[];
   /** Saved SSH hosts. */
   remotes: commands.Remote[];
+  /** Where `~` points on this machine, learned at startup. */
+  homeDir: string;
   /** Whether the places bar is shown. */
   showPlaces: boolean;
   /**
@@ -286,6 +288,7 @@ export interface FileManagerState {
   setSort: (pane: PaneId, key: SortKey) => void;
   setPaneError: (pane: PaneId, error: AppError | string | null) => void;
   /** The app declining rather than failing. Status bar, not banner. */
+  setHomeDir: (home: string) => void;
   setPaneNotice: (pane: PaneId, notice: string | null) => void;
   /**
    * Clears whichever of the two a pane is showing. Reports whether there was
@@ -523,6 +526,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
   contextMenu: null,
   bookmarks: [],
   remotes: [],
+  homeDir: "",
   showPlaces: true,
   remoteCache: {},
 
@@ -1279,6 +1283,8 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     }));
   },
 
+  setHomeDir: (home) => set({ homeDir: home }),
+
   setPaneNotice: (pane, notice) =>
     set((state) => ({
       panes: {
@@ -1621,8 +1627,10 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     // well as the path, so committing it has to be able to change machine.
     // navigate alone would keep whichever host the pane was already on.
     return void (where.scope === "remote"
-      ? state.connectPane(pane, where.alias, where.path)
-      : state.connectPane(pane, null, where.path));
+      ? // A host resolves its own `~`: it knows its home and this machine does
+        // not, so expanding here would send the wrong path across.
+        state.connectPane(pane, where.alias, where.path)
+      : state.connectPane(pane, null, expandHome(where.path, state.homeDir)));
   },
 
   disconnectPane: async (pane) => {
