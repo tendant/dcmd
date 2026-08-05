@@ -9,8 +9,8 @@
 .DEFAULT_GOAL := help
 
 # Every target is phony; none of them produce a file of their own name.
-.PHONY: help install dev web build test test-web test-rust test-live lint fmt \
-        check fixture platforms ssh-up ssh-down clean
+.PHONY: help install run dev web build test test-web test-rust test-live lint \
+        fmt check fixture platforms ssh-up ssh-down clean
 
 help: ## Show this list
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -18,6 +18,8 @@ help: ## Show this list
 
 install: ## Install frontend dependencies exactly as the lockfile says
 	pnpm install --frozen-lockfile
+
+run: dev ## Run the app (an alias for dev, which is how you run it)
 
 dev: ## Run the app with hot reload
 	pnpm tauri dev
