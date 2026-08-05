@@ -153,6 +153,16 @@ offers to open in the default application instead.
 Dragging a selected row takes the whole selection; dragging an unselected one
 takes just that row.
 
+**A refusal is not an error.** "Nothing to copy", or asking for a terminal on a
+remote pane, appear as a line in the status bar: nothing went wrong, nothing was
+lost, and nothing needs deciding. The red bar above the list is kept for
+failures that lost work or need an answer — it shifts every row down, which is
+too much ceremony for being told a keypress did nothing.
+
+**Escape dismisses whatever a pane is telling you**, and does not spend the
+keypress doing it: the same Escape still clears your filter or cancels the
+transfer. Otherwise a message would make you press it twice.
+
 **Errors reach a log file.** The webview console goes nowhere a user can see, so
 uncaught errors, failed listings and transfer failures are appended to
 `dcmd.log` in the platform log directory. **dcmd → Open Log** opens it.

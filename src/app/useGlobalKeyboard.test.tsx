@@ -133,6 +133,25 @@ describe("the keys the menu must not have taken", () => {
     expect(useFileManagerStore.getState().panes.left.filter).toBe("a");
   });
 
+  it("clears a notice on Escape without using up the keypress", () => {
+    // The whole point of the tier: being told something must not cost the
+    // Escape that was going to clear the filter, or the message makes you
+    // press it twice.
+    seed({ filter: "a", notice: "Nothing to copy" });
+    press("Escape");
+    const pane = useFileManagerStore.getState().panes.left;
+    expect(pane.notice).toBeNull();
+    expect(pane.filter).toBe("");
+  });
+
+  it("clears an error on Escape too, so the keyboard can dismiss it", () => {
+    // Until this existed the only way to clear the bar was clicking its ✕.
+    seed({}, {});
+    useFileManagerStore.getState().setPaneError("left", "Could not read it");
+    press("Escape");
+    expect(useFileManagerStore.getState().panes.left.error).toBeNull();
+  });
+
   it("clears the filter on Escape", () => {
     seed({ filter: "ab" });
     press("Escape");

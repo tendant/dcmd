@@ -33,6 +33,18 @@ export interface PaneState {
   rangeStart: number | null;
   loading: boolean;
   error: AppError | null;
+  /**
+   * The app declining, as against the app failing.
+   *
+   * "Nothing to copy" is not a warning: nothing went wrong, nothing was lost,
+   * and there is nothing to decide. Shown as a line in the status bar rather
+   * than a red banner above the list, because a banner shifts every row down
+   * and then waits to be dismissed — a great deal of ceremony for being told
+   * that a keypress did nothing.
+   *
+   * Cleared by the same things that clear `error`: the next listing, or Escape.
+   */
+  notice: string | null;
   renameMode: RenameMode;
   isEditingPath: boolean;
   /** Type-to-filter text; empty means no filter. Resolve rows via visibleEntries(). */
@@ -272,6 +284,15 @@ export interface FileManagerState {
   /** Re-selecting the active key reverses it, which is what column headers do. */
   setSort: (pane: PaneId, key: SortKey) => void;
   setPaneError: (pane: PaneId, error: AppError | string | null) => void;
+  /** The app declining rather than failing. Status bar, not banner. */
+  setPaneNotice: (pane: PaneId, notice: string | null) => void;
+  /**
+   * Clears whichever of the two a pane is showing. Reports whether there was
+   * anything, though Escape does not stop at it — being told something is
+   * advisory, and should not cost the keypress that was going to clear a
+   * filter.
+   */
+  dismissPaneMessages: (pane: PaneId) => boolean;
   reportError: (pane: PaneId, err: unknown, context?: ErrorContext) => void;
   /** How many entries an operation would act on (selection, else cursor row). */
   targetCount: (pane: PaneId) => number;
@@ -471,6 +492,7 @@ const defaultPaneState = (path: string): PaneState => ({
   rangeStart: null,
   loading: false,
   error: null,
+  notice: null,
   renameMode: null,
   isEditingPath: false,
   filter: "",
@@ -808,7 +830,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     set((state) => ({
       panes: {
         ...state.panes,
-        [pane]: { ...state.panes[pane], loading: true, error: null },
+        [pane]: { ...state.panes[pane], loading: true, error: null, notice: null },
       },
     }));
 
@@ -840,7 +862,15 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
           Object.entries(paneState.dirSizes).filter(([p]) => present.has(p)),
         );
 
-        const next = { ...paneState, entries, selected, dirSizes, loading: false, error: null };
+        const next = {
+          ...paneState,
+          entries,
+          selected,
+          dirSizes,
+          loading: false,
+          error: null,
+          notice: null,
+        };
 
         // Prefer landing on the same entry; if it is gone, hold the same slot.
         const visible = visibleEntries(next);
@@ -995,7 +1025,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     const toRemote = state.panes[other].remote;
     if (fromRemote || toRemote) {
       if (sources.length === 0 || !destination) {
-        state.setPaneError(active, `Nothing to ${op}`);
+        state.setPaneNotice(active, `Nothing to ${op}`);
         return;
       }
       if (op === "move") {
@@ -1028,7 +1058,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     }
 
     if (sources.length === 0 || !destination) {
-      state.setPaneError(active, `Nothing to ${op}`);
+      state.setPaneNotice(active, `Nothing to ${op}`);
       return;
     }
 
@@ -1215,10 +1245,32 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     }
     set((state) => ({
       panes: {
+        // A real failure supersedes a notice: the quieter of the two must not
+        // sit underneath the louder one saying something contradictory.
         ...state.panes,
-        [pane]: { ...state.panes[pane], error: normalised },
+        [pane]: { ...state.panes[pane], error: normalised, notice: null },
       },
     }));
+  },
+
+  setPaneNotice: (pane, notice) =>
+    set((state) => ({
+      panes: {
+        ...state.panes,
+        [pane]: { ...state.panes[pane], notice },
+      },
+    })),
+
+  dismissPaneMessages: (pane) => {
+    const { error, notice } = get().panes[pane];
+    if (!error && !notice) return false;
+    set((state) => ({
+      panes: {
+        ...state.panes,
+        [pane]: { ...state.panes[pane], error: null, notice: null },
+      },
+    }));
+    return true;
   },
 
   /** Records a failure against a pane, mapped for display. Cancellations are dropped. */

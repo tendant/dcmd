@@ -55,7 +55,7 @@ export const MENU_ACTIONS: Record<string, (s: FileManagerState) => void> = {
     // A remote pane's path exists on the far host, and opening a local shell
     // there would land somewhere else entirely — or nowhere.
     if (pane.remote) {
-      return s.setPaneError(s.activePane, "Cannot open a terminal on a remote pane");
+      return s.setPaneNotice(s.activePane, "No terminal on a remote pane");
     }
     void commands
       .openTerminal(pane.path)
@@ -73,8 +73,11 @@ export const MENU_ACTIONS: Record<string, (s: FileManagerState) => void> = {
   },
   clear_filter: (s) => s.clearFilter(s.activePane),
   cancel: (s) => {
-    // Escape's order: a pending connection first, then the transfer, then any
-    // size walks. Connecting leads because it blocks the whole pane.
+    // Whatever the pane is saying goes first and without consuming the action,
+    // matching Escape.
+    s.dismissPaneMessages(s.activePane);
+    // Then: a pending connection, then the transfer, then any size walks.
+    // Connecting leads because it blocks the whole pane.
     if (s.cancelRemoteConnect(s.activePane)) return;
     if (s.transfer) s.cancelTransfer();
     else s.cancelAllDirSizes(s.activePane);

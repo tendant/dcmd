@@ -120,3 +120,17 @@ describe("StatusBar", () => {
     expect(screen.getByText(/2 items · 1 selected/)).toBeInTheDocument();
   });
 });
+
+describe("a notice", () => {
+  it("takes the counts' place rather than adding a row", () => {
+    // Adding a row would shift the list, which is the thing the tier exists to
+    // avoid — the banner already did that.
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: { ...s.panes, left: { ...s.panes.left, notice: "Nothing to copy" } },
+    });
+    render(<StatusBar paneId="left" />);
+    expect(screen.getByRole("status")).toHaveTextContent("Nothing to copy");
+    expect(screen.queryByText(/items?$/)).toBeNull();
+  });
+});

@@ -97,7 +97,13 @@ export function useGlobalKeyboard() {
         case "Escape": {
           e.preventDefault();
           const pane = store.activePane;
-          // Escape unwinds one thing at a time, most transient first: a pending
+          // Anything the pane is telling you goes, always, and without using up
+          // the keypress. Being told something is advisory rather than an
+          // operation to unwind, so it must not cost the Escape that was going
+          // to clear a filter — otherwise the message makes you press it twice.
+          store.dismissPaneMessages(pane);
+
+          // Then unwind one thing at a time, most transient first: a pending
           // connection, then a running transfer, then a filter, then background
           // size walks. Connecting goes first because it is the one that blocks
           // the pane entirely — nothing else in it can proceed until it ends.

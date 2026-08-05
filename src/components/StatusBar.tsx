@@ -38,7 +38,19 @@ export function StatusBar({ paneId }: { paneId: PaneId }) {
 
   return (
     <div className="flex items-center justify-between gap-4 border-t border-gray-300 bg-gray-200 px-3 py-1 text-[11px] text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-      <span className="truncate tabular-nums">{parts.join(" · ")}</span>
+      {/*
+        A notice takes the counts' place rather than adding a row: it is brief,
+        it goes away on the next keypress, and the point of putting it here at
+        all is that nothing moves. `role="status"` so it is announced without
+        stealing focus, which is the same restraint in another medium.
+      */}
+      {pane.notice ? (
+        <span role="status" className="truncate text-amber-800 dark:text-amber-300">
+          {pane.notice}
+        </span>
+      ) : (
+        <span className="truncate tabular-nums">{parts.join(" · ")}</span>
+      )}
       {pane.remote && (
         <span className="shrink-0 font-mono text-violet-700 dark:text-violet-300">
           {pane.remote}
