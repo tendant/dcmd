@@ -164,19 +164,37 @@ filesystems — sort last whichever direction is chosen.
 ## Development
 
 ```sh
-pnpm test                       # frontend: store logic and components (jsdom)
-cd src-tauri && cargo test      # filesystem operations
-cargo clippy --all-targets -- -D warnings
-cargo clippy --release --all-targets -- -D warnings   # cfg differences only this sees
-cargo fmt --check
+make            # what every target does
+make check      # everything CI runs, in the same order
+make dev        # the app, with hot reload
 ```
 
-The release run matters: code behind `debug_assertions` — the developer tools
-menu item — is compiled out there, and a `mut` that only the removed branch
-needed is a warning nothing in the dev profile can report.
+`make check` is the one to run before pushing. Underneath it is nothing you
+could not type by hand — the commands simply live in two directories and two
+ecosystems:
 
-CI runs all of the above, with the Rust suite across Linux, macOS and Windows —
-the filesystem behaviour is what differs between them.
+```sh
+pnpm build                      # tsc, so this covers type errors too
+pnpm test                       # frontend: store logic and components (jsdom)
+cd src-tauri && cargo fmt --check
+cd src-tauri && cargo clippy --all-targets -- -D warnings
+cd src-tauri && cargo clippy --release --all-targets -- -D warnings
+cd src-tauri && cargo test
+```
+
+The release clippy run matters: code behind `debug_assertions` — the developer
+tools menu item — is compiled out there, and a `mut` that only the removed
+branch needed is a warning nothing in the dev profile can report. **CI does not
+run it**, so `make check` is deliberately stricter than CI rather than equal to
+it. That is the one difference between them.
+
+CI runs the rest, with the Rust suite across Linux, macOS and Windows — the
+filesystem behaviour is what differs between them.
+
+`make test-live` runs the Rust suite including the remote tests, starting a
+throwaway SSH container first and stopping it afterwards even if the tests fail.
+Without it those tests skip silently and report `ok` without connecting to
+anything.
 
 `./scripts/check-platforms.sh` runs clippy over the cfg-gated filesystem code
 for Linux and Windows. The full crate cannot be cross-checked from macOS —
