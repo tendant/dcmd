@@ -108,7 +108,16 @@ resumes, it only sends what differs, and a dry run shows what would change
 before anything does. Listings are cached, so going back to a directory does not
 re-fetch it.
 
-**Getting back.** `⌘L` takes a scope as well as a path:
+**Switching machines is a click.** The places bar opens with **⌂ This Mac**,
+which brings a pane back here — the bar could already send one to any host, and
+this is the way back. Alt-click sends it to the other pane, like every chip.
+**Go → Disconnect from Host** and the command palette do the same without the
+mouse.
+
+Neither needs the path edited, which is the point: changing machine should not
+mean retyping where you are.
+
+**If you would rather type**, `⌘L` takes a scope as well as a path:
 
 | Typed | Goes to |
 | --- | --- |
@@ -117,8 +126,9 @@ re-fetch it.
 | `local:/var/log` | `/var/log` on this machine |
 
 A bare path deliberately stays put: on a host, `/var/log` means that host's.
-Editing `build:` to `local:` is the whole gesture for coming back, and `⌘L`
-pre-fills the prefix so it is visible rather than something you have to know.
+`⌘L` pre-fills the prefix and selects only the path after it, so typing changes
+where you are going without changing which machine — the prefix goes only if you
+remove it deliberately.
 
 **Go → Disconnect from Host** does the same without typing — also in the command
 palette. It lands on the same path if it exists here and your home directory

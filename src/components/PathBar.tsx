@@ -26,11 +26,16 @@ export function PathBar({ path, paneId, isEditing }: PathBarProps) {
   const listingAge = useFileManagerStore((s) => s.listingAge);
 
   useEffect(() => {
-    if (isEditing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [isEditing]);
+    if (!isEditing) return;
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus();
+    // Select the path, leaving the host prefix intact. Selecting everything
+    // meant the first keystroke wiped which machine you were on as well as
+    // where on it — and typing a path is the ordinary edit, changing machine
+    // the rare one. The prefix can still be edited or removed deliberately.
+    input.setSelectionRange(remote ? `${remote}:`.length : 0, input.value.length);
+  }, [isEditing, remote]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {

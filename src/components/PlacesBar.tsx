@@ -15,6 +15,7 @@ export function PlacesBar() {
   const activePane = useFileManagerStore((s) => s.activePane);
   const panes = useFileManagerStore((s) => s.panes);
   const connectPane = useFileManagerStore((s) => s.connectPane);
+  const disconnectPane = useFileManagerStore((s) => s.disconnectPane);
   const openContextMenu = useFileManagerStore((s) => s.openContextMenu);
 
   if (!shown || (bookmarks.length === 0 && remotes.length === 0)) return null;
@@ -30,6 +31,10 @@ export function PlacesBar() {
     openContextMenu({ x: e.clientX, y: e.clientY, pane: activePane, path: null, place: { kind, id } });
   };
 
+  // Marked when the active pane is already here, matching how a host chip
+  // shows you where you are before you click somewhere expensive.
+  const localHere = panes[activePane].remote === null;
+
   const chip =
     "shrink-0 rounded px-2 py-0.5 text-[11px] whitespace-nowrap border transition-colors";
 
@@ -40,6 +45,32 @@ export function PlacesBar() {
       // Chips stop propagation, so reaching here means the empty part of the bar.
       onContextMenu={menuFor("bar", "")}
     >
+      {/*
+        Somewhere to click to come back.
+
+        The bar could send a pane to any host but had no entry for this machine,
+        so returning meant already having saved a local bookmark — and with none
+        saved there was no way back here at all. Every other switch is one
+        click; this one was the exception for no reason.
+      */}
+      <button
+        onClick={(e) => void disconnectPane(target(e))}
+        title={`This machine${localHere ? " (where you are)" : ""}`}
+        aria-current={localHere || undefined}
+        className={`${chip} ${
+          localHere
+            ? "border-blue-500 bg-blue-100 text-blue-900 dark:bg-blue-900 dark:text-blue-100"
+            : "border-gray-300 bg-white text-gray-700 hover:border-blue-400 hover:text-blue-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:text-blue-300"
+        }`}
+      >
+        <span aria-hidden className="mr-1">
+          ⌂
+        </span>
+        This Mac
+      </button>
+
+      <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-gray-300 dark:bg-gray-600" />
+
       {bookmarks.map((b, i) => (
         <button
           key={`b:${b.path}`}
