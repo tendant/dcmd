@@ -1,0 +1,82 @@
+name: Update Homebrew tap
+
+# On publish, not on the tag.
+#
+# The release workflow creates a *draft*, and a draft's download URL 404s for
+# anyone but the repository's own collaborators. Bumping the cask at tag time
+# would point it at a file the world cannot fetch, and leave it that way for as
+# long as the draft sat unreviewed. This fires when the release actually becomes
+# public, which is also when the checksum is worth computing.
+on:
+  release:
+    types: [published]
+  # For repairing a cask by hand: the tag of a release already published.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag of a published release, e.g. v0.3.1"
+        required: true
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bump the cask
+        env:
+          # A PAT with contents:write on the tap repository. Absent in a fork,
+          # and absent here until someone adds it, so this has to decline rather
+          # than fail — the release itself is already out and fine.
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TAP_REPO: tendant/homebrew-tap
+          CASK: Casks/dcmd.rb
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "No TAP_TOKEN secret — leaving the cask alone."
+            echo "The release is published; the tap will simply serve the previous version."
+            exit 0
+          fi
+
+          version="${TAG#v}"
+          dmg="dcmd_${version}_aarch64.dmg"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${dmg}"
+
+          # From the URL the cask itself will use, not from a build artifact.
+          # The two differ exactly when the upload went wrong, which is the case
+          # worth catching — a cask whose checksum matches a file nobody can
+          # download is not much use.
+          echo "Fetching $url"
+          curl -fsSL "$url" -o "$dmg"
+          sha="$(sha256sum "$dmg" | cut -d' ' -f1)"
+          echo "sha256 $sha"
+
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
+          cd tap
+
+          current="$(sed -n 's/^  version "\(.*\)"$/\1/p' "$CASK")"
+          if [ "$current" = "$version" ]; then
+            echo "Cask is already at $version — nothing to do."
+            exit 0
+          fi
+
+          sed -i "s/^  version \".*\"$/  version \"${version}\"/" "$CASK"
+          sed -i "s/^  sha256 \".*\"$/  sha256 \"${sha}\"/" "$CASK"
+
+          # Guard against a sed that matched nothing: a silent no-op here would
+          # commit an unchanged file and report success.
+          grep -q "version \"${version}\"" "$CASK"
+          grep -q "sha256 \"${sha}\"" "$CASK"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$CASK"
+          git commit -m "dcmd ${version}
+
+          Checksum taken from the published release asset, which is the file the
+          cask's own url serves.
+
+          Bumped by ${GITHUB_REPOSITORY}@${GITHUB_SHA} on release ${TAG}."
+          git push
+          echo "Cask bumped from ${current} to ${version}."

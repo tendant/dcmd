@@ -308,6 +308,46 @@ produces a commit list and none of this, so it is written by hand:
   notarised, so this should not come up — check the `spctl` lines in the log
   before assuming it.
 
+## The Homebrew tap
+
+[`tendant/homebrew-tap`](https://github.com/tendant/homebrew-tap) carries the
+cask, so `brew install --cask tendant/tap/dcmd` gets the current build.
+
+[`.github/workflows/tap.yml`](../.github/workflows/tap.yml) bumps its `version`
+and `sha256` automatically. It runs on **release published**, not on the tag:
+the release workflow creates a draft, and a draft's download URL 404s for
+anyone outside the repository — bumping then would point the cask at a file
+nobody can fetch and leave it that way until the draft was reviewed.
+
+The checksum is taken by downloading from the URL the cask itself will use,
+rather than from a build artifact. The two agree unless the upload went wrong,
+which is the case worth catching: a cask whose checksum matches a file nobody
+can download is no better than a stale one.
+
+It needs one secret, `TAP_TOKEN` — a fine-grained personal access token with
+**contents: read and write** on the tap repository only:
+
+```sh
+gh secret set TAP_TOKEN            # paste the token
+```
+
+Without it the job declines and says so rather than failing. The release is
+already out by then, and a tap that lags is not a reason to redden a build. It
+does mean the tap silently serves the previous version, so check it after the
+first release with the token in place:
+
+```sh
+brew update && brew info --cask tendant/tap/dcmd
+```
+
+To repair a cask by hand — a bump that failed, or a release published before
+the secret existed — run the workflow from **Actions → Update Homebrew tap →
+Run workflow** with the tag of a release that is already public.
+
+The official `homebrew-cask` will not take dcmd yet: it requires 75 stars, 30
+forks or 30 watchers. The cask here is written to the same rules, so submitting
+it later is a move rather than a rewrite.
+
 ## Known gaps
 
 - **Nothing verifies the bundles run.** CI builds and signs them; that they
