@@ -279,6 +279,11 @@ export interface FileManagerState {
   computeDirSize: (pane: PaneId, path: string) => Promise<void>;
   cancelDirSize: (pane: PaneId, path: string) => void;
   cancelAllDirSizes: (pane: PaneId) => void;
+  /**
+   * Abandons a remote connection still being established. Reports whether there
+   * was one, so Escape can move on to the next thing it means if there was not.
+   */
+  cancelRemoteConnect: (pane: PaneId) => boolean;
   selectRange: (pane: PaneId, fromIndex: number, toIndex: number) => void;
   clearSelection: (pane: PaneId) => void;
   selectAll: (pane: PaneId) => void;
@@ -1290,6 +1295,17 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         });
       }
     }
+  },
+
+  cancelRemoteConnect: (pane) => {
+    const { remote, loading } = get().panes[pane];
+    // Only while a remote pane is still waiting. A finished listing has nothing
+    // to abandon, and Escape has other work when there is nothing in flight.
+    if (!remote || !loading) return false;
+    commands.cancelRemoteConnect(remote).catch((err) => {
+      console.error(`Failed to cancel connecting to ${remote}:`, err);
+    });
+    return true;
   },
 
   toggleSelection: (pane, path) => {

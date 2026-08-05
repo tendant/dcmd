@@ -73,7 +73,9 @@ export const MENU_ACTIONS: Record<string, (s: FileManagerState) => void> = {
   },
   clear_filter: (s) => s.clearFilter(s.activePane),
   cancel: (s) => {
-    // Escape's order: the transfer first, then any size walks.
+    // Escape's order: a pending connection first, then the transfer, then any
+    // size walks. Connecting leads because it blocks the whole pane.
+    if (s.cancelRemoteConnect(s.activePane)) return;
     if (s.transfer) s.cancelTransfer();
     else s.cancelAllDirSizes(s.activePane);
   },

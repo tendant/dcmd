@@ -54,12 +54,17 @@ default-features = false
 
 [target.'cfg(unix)'.dependencies.tokio]
 version = "1"
-features = ["sync", "process", "io-util", "macros"]
+# `time` for the deadline on connecting: ssh's own ConnectTimeout covers the TCP
+# connect and nothing after it, so the rest needs bounding here.
+features = ["sync", "process", "io-util", "macros", "time"]
 
 [target.'cfg(unix)'.dependencies]
 # For renamex_np / renameat2: an atomic rename that refuses to clobber, which
 # std does not expose.
 libc = "0.2"
+# The generated ssh config that forces BatchMode on. Written per connection and
+# deleted with it, so a stale one cannot outlive the process that reads it.
+tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 # MoveFileExW without MOVEFILE_REPLACE_EXISTING, for the same reason.

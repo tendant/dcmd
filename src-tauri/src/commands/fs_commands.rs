@@ -379,6 +379,27 @@ pub async fn list_remote_directory(
     }
 }
 
+/// Abandons a connection still being established.
+///
+/// Connecting can outlast anyone's patience — a host that accepts TCP and then
+/// stops responding, an alias pointing somewhere that no longer exists — and
+/// until this existed there was no way out of it but quitting the app.
+#[cfg(unix)]
+#[tauri::command]
+pub async fn cancel_remote_connect(
+    alias: String,
+    connections: tauri::State<'_, crate::remote::session::Connections>,
+) -> Result<(), FsError> {
+    connections.cancel(&alias).await;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+#[tauri::command]
+pub async fn cancel_remote_connect(_alias: String) -> Result<(), FsError> {
+    Ok(())
+}
+
 /// Windows has no ssh multiplexing to build on, so remote browsing is not
 /// available there. Reported plainly rather than the command being absent, which
 /// would surface as an unhelpful "command not found".

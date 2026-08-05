@@ -65,6 +65,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::list_directory,
             commands::list_remote_directory,
+            commands::cancel_remote_connect,
             commands::rsync_transfer,
             commands::ssh_config_hosts,
             commands::mark_startup,

@@ -110,6 +110,13 @@ export const revealEntry = (path: string): Promise<void> =>
 export const openTerminal = (path: string): Promise<void> =>
   invoke<void>("open_terminal", { path });
 
+/**
+ * Abandons a connection still being established. A no-op if that host is not
+ * currently connecting, so it is safe to call on any Escape.
+ */
+export const cancelRemoteConnect = (alias: string): Promise<void> =>
+  invoke<void>("cancel_remote_connect", { alias });
+
 export const directorySize = (path: string): Promise<number> =>
   invoke<number>("directory_size", { path });
 
