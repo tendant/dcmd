@@ -26,6 +26,16 @@ export type RenameMode =
   | { type: "creating" }
   | null;
 
+/**
+ * Where a pane was left in a directory: the entry under the cursor and the
+ * marked selection, both by path so they survive the listing being re-sorted or
+ * the directory changing underneath.
+ */
+export interface PaneMemory {
+  cursor: string | null;
+  selected: string[];
+}
+
 export interface PaneState {
   path: string;
   entries: FileEntry[];
@@ -75,6 +85,15 @@ export interface PaneState {
    * A value of "pending" means a computation is in flight.
    */
   dirSizes: Record<string, number | "pending" | "error">;
+  /**
+   * Where this pane was left in each directory it has visited, keyed by
+   * `remote:path`. Restored on arrival, so stepping into a folder and back out
+   * returns the cursor to that folder rather than to the top of the list.
+   *
+   * Per pane, since the two panes are independent views; keyed by host as well
+   * as path, because the same path on two machines is two different places.
+   */
+  cursorMemory: Record<string, PaneMemory>;
 }
 
 /**
@@ -171,6 +190,13 @@ export const HISTORY_LIMIT = 200;
 /** Matches the backend cap; the list is a menu, not something to scroll. */
 export const MAX_BOOKMARKS = 30;
 
+/**
+ * Cap on directories whose cursor position is remembered. Deep enough to cover
+ * a tree the user is actually working in, small enough that walking a huge
+ * hierarchy cannot accumulate state for every directory visited.
+ */
+export const CURSOR_MEMORY_LIMIT = 200;
+
 export const MIN_SPLIT = 0.15;
 export const MAX_SPLIT = 1 - MIN_SPLIT;
 
@@ -244,8 +270,16 @@ export interface FileManagerState {
    * `record: false` replays an existing history entry rather than adding one,
    * which is what going back and forward do — recording there would make the
    * back button push a new entry and never actually go anywhere.
+   *
+   * `remember: false` skips noting where the pane was left, for the one caller
+   * that has already pointed the pane at another host: the path it is leaving
+   * belongs to the machine it was on, not the one it is now labelled with.
    */
-  navigate: (pane: PaneId, path: string, opts?: { record?: boolean }) => Promise<void>;
+  navigate: (
+    pane: PaneId,
+    path: string,
+    opts?: { record?: boolean; remember?: boolean },
+  ) => Promise<void>;
   goBack: (pane: PaneId) => Promise<void>;
   goForward: (pane: PaneId) => Promise<void>;
   canGoBack: (pane: PaneId) => boolean;
@@ -488,6 +522,47 @@ export const entryAtCursor = (paneState: PaneState): FileEntry | null => {
  * dual-pane file manager does, and without it operations silently do nothing
  * until the user happens to have pressed Space.
  */
+/** Identifies a directory across hosts: the same path on two machines is two
+ * different places, and a pane can switch between them. */
+const memoryKey = (remote: string | null, path: string): string =>
+  `${remote ?? ""}:${path}`;
+
+/**
+ * Records where a pane is being left, dropping the oldest directory once the
+ * cap is reached. Re-inserting an existing key moves it to the end, so the
+ * directories in active use are the ones that survive.
+ */
+const rememberPosition = (paneState: PaneState): Record<string, PaneMemory> => {
+  if (!paneState.path) return paneState.cursorMemory;
+  const key = memoryKey(paneState.remote, paneState.path);
+  const kept = Object.entries(paneState.cursorMemory).filter(([k]) => k !== key);
+  const entry: PaneMemory = {
+    cursor: entryAtCursor(paneState)?.path ?? null,
+    selected: Array.from(paneState.selected),
+  };
+  return Object.fromEntries([...kept, [key, entry]].slice(-CURSOR_MEMORY_LIMIT));
+};
+
+/**
+ * The cursor row and selection to arrive on, given what was remembered about
+ * this directory. Entries that have since gone are dropped, and a forgotten (or
+ * vanished) cursor falls back to the first row, as a first visit does.
+ */
+const restorePosition = (
+  paneState: PaneState,
+): { cursor: number; selected: Set<string> } => {
+  const remembered = paneState.cursorMemory[memoryKey(paneState.remote, paneState.path)];
+  if (!remembered) return { cursor: initialCursor(paneState), selected: new Set() };
+
+  const visible = visibleEntries(paneState);
+  const present = new Set(visible.map((e) => e.path));
+  const i = remembered.cursor ? visible.findIndex((e) => e.path === remembered.cursor) : -1;
+  return {
+    cursor: i >= 0 ? i + 1 : initialCursor(paneState),
+    selected: new Set(remembered.selected.filter((p) => present.has(p))),
+  };
+};
+
 const targetPaths = (paneState: PaneState): string[] => {
   if (paneState.selected.size > 0) return Array.from(paneState.selected);
   const entry = entryAtCursor(paneState);
@@ -513,6 +588,7 @@ const defaultPaneState = (path: string): PaneState => ({
   sort: { key: "name", ascending: true },
   columnWidths: { size: DEFAULT_SIZE_WIDTH, modified: DEFAULT_MODIFIED_WIDTH },
   dirSizes: {},
+  cursorMemory: {},
 });
 
 export const useFileManagerStore = create<FileManagerState>((set, get) => ({
@@ -598,15 +674,27 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       (alias
         ? get().remotes.find((r) => r.alias === alias)?.startPath || "/"
         : "/");
-    set((state) => ({
-      panes: {
-        ...state.panes,
-        // History belongs to a machine; carrying it across would offer to go
-        // "back" to a path that does not exist on the new one.
-        [pane]: { ...state.panes[pane], remote: alias, history: [], historyIndex: -1 },
-      },
-    }));
-    await get().navigate(pane, target);
+    set((state) => {
+      const previous = state.panes[pane];
+      return {
+        panes: {
+          ...state.panes,
+          // History belongs to a machine; carrying it across would offer to go
+          // "back" to a path that does not exist on the new one. Cursor memory is
+          // keyed by host, so it can stay — and the position on the host being
+          // left has to be recorded here, before `remote` changes out from under
+          // it, which is why navigate() is told not to record it again.
+          [pane]: {
+            ...previous,
+            cursorMemory: rememberPosition(previous),
+            remote: alias,
+            history: [],
+            historyIndex: -1,
+          },
+        },
+      };
+    });
+    await get().navigate(pane, target, { remember: false });
   },
 
   listingAge: (pane) => {
@@ -755,6 +843,9 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
     set((state) => {
       const previous = state.panes[pane];
       const record = opts?.record !== false && path !== previous.path;
+      // Where we are leaving from, so coming back lands on the same row.
+      const cursorMemory =
+        opts?.remember === false ? previous.cursorMemory : rememberPosition(previous);
       // Navigating somewhere new discards the forward stack, as it does in a
       // browser: the path not taken is no longer reachable.
       const history = record
@@ -768,6 +859,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
           ...state.panes[pane],
           history,
           historyIndex: record ? history.length - 1 : previous.historyIndex,
+          cursorMemory,
           path,
           loading: true,
           error: null,
@@ -818,7 +910,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         return {
           panes: {
             ...state.panes,
-            [pane]: { ...next, cursor: initialCursor(next) },
+            [pane]: { ...next, ...restorePosition(next) },
           },
         };
       });

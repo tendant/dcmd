@@ -345,7 +345,7 @@ describe("menus for a places-bar chip", () => {
       const spy = vi.fn();
       useFileManagerStore.setState({ navigate: spy as any });
       (find(menuFor("bookmark", "/c"), "Open in other") as any).run();
-      expect(spy).toHaveBeenCalledWith("right", "/c");
+      expect(spy).toHaveBeenCalledWith("right", "/c", expect.anything());
     });
 
     it("offers removal, marked as destructive", () => {

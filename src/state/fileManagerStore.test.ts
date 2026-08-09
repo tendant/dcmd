@@ -1213,6 +1213,138 @@ describe("the cursor in a freshly listed directory", () => {
   });
 });
 
+describe("coming back to a directory", () => {
+  const row = (parent: string, name: string, kind: "file" | "directory"): FileEntry => ({
+    name,
+    path: `${parent}/${name}`,
+    kind,
+    size: kind === "file" ? 1 : null,
+    itemCount: null,
+    modifiedAt: null,
+    createdAt: null,
+    hidden: false,
+  });
+
+  // /a holds two folders and a file; /a/two holds one file.
+  let tree: Record<string, FileEntry[]>;
+
+  const store = () => useFileManagerStore.getState();
+  const left = () => useFileManagerStore.getState().panes.left;
+  const cursorName = () => entryAtCursor(left())?.name ?? "..";
+  /** Put the cursor on a named row, the way an arrow key would. */
+  const putCursorOn = (name: string) =>
+    store().setCursor("left", visibleEntries(left()).findIndex((e) => e.name === name) + 1);
+
+  beforeEach(() => {
+    tree = {
+      "/a": [row("/a", "one", "directory"), row("/a", "two", "directory"), row("/a", "z.txt", "file")],
+      "/a/two": [row("/a/two", "x.txt", "file")],
+      "/a/one": [row("/a/one", "y.txt", "file")],
+    };
+    vi.mocked(commands.listDirectory).mockImplementation(
+      async (p: string) => tree[p] ?? [],
+    );
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      remoteCache: {},
+      panes: {
+        ...s.panes,
+        left: {
+          ...s.panes.left,
+          path: "",
+          remote: null,
+          entries: [],
+          selected: new Set(),
+          cursor: 0,
+          filter: "",
+          showHidden: false,
+          sort: { key: "name", ascending: true },
+          history: [],
+          historyIndex: -1,
+          cursorMemory: {},
+        },
+      },
+    });
+  });
+
+  it("puts the cursor back on the folder that was entered", async () => {
+    await store().navigate("left", "/a");
+    putCursorOn("two");
+    await store().navigate("left", "/a/two");
+    await store().goToParent("left");
+
+    expect(left().path).toBe("/a");
+    expect(cursorName()).toBe("two");
+  });
+
+  // The marks are what an operation acts on, so losing them on the way back
+  // means silently re-selecting before the next copy.
+  it("restores the marked selection", async () => {
+    await store().navigate("left", "/a");
+    store().toggleSelection("left", "/a/one");
+    store().toggleSelection("left", "/a/z.txt");
+    await store().navigate("left", "/a/two");
+    await store().goToParent("left");
+
+    expect(Array.from(left().selected).sort()).toEqual(["/a/one", "/a/z.txt"]);
+  });
+
+  it("restores when going back through history, not only up", async () => {
+    await store().navigate("left", "/a");
+    putCursorOn("z.txt");
+    await store().navigate("left", "/a/two");
+    await store().goBack("left");
+
+    expect(cursorName()).toBe("z.txt");
+  });
+
+  // A remembered row that has since been deleted must not leave the cursor
+  // pointing at nothing, or hunting for a match that will never come.
+  it("falls back to the first row when the remembered entry is gone", async () => {
+    await store().navigate("left", "/a");
+    putCursorOn("two");
+    await store().navigate("left", "/a/two");
+    tree["/a"] = tree["/a"].filter((e) => e.name !== "two");
+    await store().goToParent("left");
+
+    expect(cursorName()).toBe("one");
+    expect(left().selected.size).toBe(0);
+  });
+
+  it("starts at the top in a directory it has not seen", async () => {
+    await store().navigate("left", "/a");
+    putCursorOn("two");
+    await store().navigate("left", "/a/one");
+
+    expect(cursorName()).toBe("y.txt");
+  });
+
+  // Same path, different machine: two different directories.
+  it("does not carry a position across hosts", async () => {
+    useFileManagerStore.setState({
+      remotes: [{ name: "Build", alias: "build", startPath: "/a" }],
+    });
+    await store().navigate("left", "/a");
+    putCursorOn("two");
+
+    vi.mocked(commands.listRemoteDirectory).mockResolvedValueOnce({
+      path: "/a",
+      entries: [row("/a", "one", "directory"), row("/a", "two", "directory")],
+    });
+    await store().connectPane("left", "build");
+    expect(cursorName()).toBe("one");
+
+    // And the local position survived the trip.
+    await store().connectPane("left", null, "/a");
+    expect(cursorName()).toBe("two");
+  });
+
+  it("does not grow without bound", async () => {
+    for (let i = 0; i < 250; i++) await store().navigate("left", `/d${i}`);
+    expect(Object.keys(left().cursorMemory).length).toBeLessThanOrEqual(200);
+  });
+});
+
 describe("the places bar while a pane is on a remote", () => {
   beforeEach(() => {
     // Both panes reset explicitly: the shared beforeEach does not clear
