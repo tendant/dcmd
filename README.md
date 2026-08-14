@@ -81,6 +81,7 @@ window `pnpm tauri dev` opens. The app says so rather than failing silently.
 | Refresh | `⌘R` / `Ctrl+R` |
 | Select, and size a folder | `Space` |
 | Extend selection | `Shift+↑↓`, `Shift+Click` |
+| Mark one row with the mouse | `⌘Click` / `Ctrl+Click` |
 | Filter | just start typing |
 | Clear filter, cancel a transfer | `Esc` |
 | Show/hide dotfiles | `⌘⇧.` / `Ctrl+H` |
@@ -108,6 +109,13 @@ bindings exist for that reason and do the same thing.
 
 **Right-click** a row, empty space, a places-bar chip or the bar itself for a
 menu of what applies, each item labelled with its keyboard shortcut.
+
+**A plain click means that row and nothing else**, dropping any marks made
+earlier — as does clicking the empty space below the list. `⌘Click` adds or
+removes a single row without disturbing the rest, and `Shift+Click` runs the
+selection from the row the cursor is on to the one clicked. The arrow keys are
+deliberately different: they move the cursor and leave the marks where they are,
+which is what lets `Space` build a selection a row at a time.
 
 Everything is also in the application menu. A command has exactly one binding:
 the menu owns every `⌘`/`Ctrl` accelerator, and the keyboard handler owns the
