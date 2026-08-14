@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("../tauri/commands", async () => (await import("../test-utils")).commandMocks);
@@ -50,6 +50,9 @@ beforeEach(() => {
         entries: [entry("a.txt"), entry("b.txt")],
         selected: new Set(),
         cursor: 1,
+        // The store is module-level: an anchor left by one test's Cmd+click
+        // would decide where the next one's Shift+click started from.
+        rangeStart: null,
         filter: "",
         showHidden: false,
         sort: { key: "name", ascending: true },
@@ -129,6 +132,68 @@ describe("right-clicking a row", () => {
     );
     await rightClick(screen.getByText("a.txt"));
     expect(useFileManagerStore.getState().panes.left.selected.size).toBe(2);
+  });
+});
+
+describe("clicking a row", () => {
+  const row = (name: string, index: number) =>
+    render(
+      <FileRow
+        entry={entry(name)}
+        paneId="left"
+        isSelected={false}
+        isCursor={false}
+        isRenaming={false}
+        index={index}
+      />,
+    );
+
+  const mark = (...paths: string[]) => {
+    const s = useFileManagerStore.getState();
+    useFileManagerStore.setState({
+      panes: { ...s.panes, left: { ...s.panes.left, selected: new Set(paths) } },
+    });
+  };
+
+  const left = () => useFileManagerStore.getState().panes.left;
+
+  // Every operation prefers the marks over the cursor row, and marks scroll out
+  // of sight — so a click that left them in place aimed F5 at files the pointer
+  // had never touched.
+  it("drops marks left over from an earlier click", () => {
+    mark("/left/a.txt");
+    row("b.txt", 2);
+    fireEvent.click(screen.getByText("b.txt"));
+
+    expect(left().selected.size).toBe(0);
+    expect(left().cursor).toBe(2);
+  });
+
+  it("narrows to the clicked row even when that row is itself marked", () => {
+    mark("/left/a.txt", "/left/b.txt");
+    row("a.txt", 1);
+    fireEvent.click(screen.getByText("a.txt"));
+
+    expect(left().selected.size).toBe(0);
+    expect(left().cursor).toBe(1);
+  });
+
+  // The pointer's Space: without it there is no way to build a scattered set
+  // with the mouse once a plain click clears.
+  it("adds to the marks with Cmd held, rather than clearing", () => {
+    mark("/left/a.txt");
+    row("b.txt", 2);
+    fireEvent.click(screen.getByText("b.txt"), { ctrlKey: true });
+
+    expect(Array.from(left().selected).sort()).toEqual(["/left/a.txt", "/left/b.txt"]);
+  });
+
+  it("extends from the cursor with Shift held", () => {
+    row("b.txt", 2); // the cursor is on row 1, a.txt
+    fireEvent.click(screen.getByText("b.txt"), { shiftKey: true });
+
+    expect(Array.from(left().selected).sort()).toEqual(["/left/a.txt", "/left/b.txt"]);
+    expect(left().cursor).toBe(2);
   });
 });
 

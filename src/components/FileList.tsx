@@ -1,7 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRef, useEffect } from "react";
 import { FileEntry } from "../types/fileEntry";
-import type { PaneId } from "../state/fileManagerStore";
+import { useFileManagerStore, type PaneId } from "../state/fileManagerStore";
 import { FileRow } from "./FileRow";
 
 const ROW_HEIGHT = 24;
@@ -67,6 +67,7 @@ export function FileList({
   filter,
 }: FileListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const clearSelection = useFileManagerStore((s) => s.clearSelection);
 
   const isCreating = renameMode?.type === "creating";
   const { rows: displayEntries, newFolderIndex } = buildDisplayRows(entries, !!isCreating);
@@ -86,9 +87,25 @@ export function FileList({
   const virtualItems = virtualizer.getVirtualItems();
   const totalSize = virtualizer.getTotalSize();
 
+  /**
+   * Clicking past the end of the listing drops the marks, the way a plain click
+   * on a row narrows them to that row: pointing at nothing is how you say
+   * "nothing", and it is the only way back to an empty selection without the
+   * keyboard.
+   *
+   * Rows live in their own children, so a click that lands on this element came
+   * from the blank space below them. Testing the target rather than stopping
+   * propagation in the rows keeps their clicks reaching the pane, which is what
+   * focuses it, and the document, which is what closes an open context menu.
+   */
+  const handleBackgroundClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) clearSelection(paneId);
+  };
+
   return (
     <div
       ref={parentRef}
+      onClick={handleBackgroundClick}
       className="flex-1 overflow-y-auto bg-white dark:bg-gray-950"
       style={{ height: "100%" }}
     >

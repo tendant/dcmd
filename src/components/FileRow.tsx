@@ -72,10 +72,17 @@ export function FileRow({
       // the cursor row when there is no range in progress — to this row.
       extendSelection(paneId, index);
     } else if (e.ctrlKey || e.metaKey) {
-      // Ctrl/Cmd+click to toggle selection
+      // Ctrl/Cmd+click adds a row to the marks or drops it again: the pointer's
+      // equivalent of Space, and the only way to build up a scattered set.
       toggleSelection(paneId, entry.path);
     } else {
-      // Single click positions cursor
+      // A plain click means this row and nothing else. Marks it left behind
+      // would still be what every operation acts on — they are preferred over
+      // the cursor row — while having scrolled out of sight, so F5 would copy
+      // files the pointer never touched instead of the one it just landed on.
+      // Right-clicking an unmarked row and dragging one already work this way.
+      // Dragging a marked row is unaffected: that fires dragstart, not click.
+      clearSelection(paneId);
       setCursor(paneId, index);
     }
   };
