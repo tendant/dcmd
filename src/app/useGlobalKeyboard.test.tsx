@@ -94,6 +94,44 @@ describe("arrow keys", () => {
     expect(useFileManagerStore.getState().panes.left.selected.size).toBeGreaterThan(0);
   });
 
+  // Regression: the anchor used to survive plain arrow keys, so a second
+  // Shift+Down ran from wherever the previous range had started and swept up
+  // every row in between.
+  it("starts a new range from the row the cursor is on now", () => {
+    seed({ cursor: 1 });
+    press("ArrowDown", { shiftKey: true }); // a + b, cursor on b
+    press("ArrowDown"); // plain move to c, ending the range
+    press("ArrowUp", { shiftKey: true }); // b + c, not a + b + c
+
+    const left = useFileManagerStore.getState().panes.left;
+    expect(Array.from(left.selected).sort()).toEqual(["/p/b", "/p/c"]);
+    expect(left.cursor).toBe(2);
+  });
+
+  it("keeps growing the same range while Shift is held", () => {
+    seed({ cursor: 1 });
+    press("ArrowDown", { shiftKey: true });
+    press("ArrowDown", { shiftKey: true });
+
+    const left = useFileManagerStore.getState().panes.left;
+    expect(Array.from(left.selected).sort()).toEqual(["/p/a", "/p/b", "/p/c"]);
+    expect(left.cursor).toBe(3);
+  });
+
+  // Coming back towards the anchor has to shrink the range, not leave the rows
+  // it already passed over marked.
+  it("shrinks the range when it comes back towards the anchor", () => {
+    seed({ cursor: 1 });
+    press("ArrowDown", { shiftKey: true });
+    press("ArrowDown", { shiftKey: true });
+    press("ArrowUp", { shiftKey: true });
+
+    expect(Array.from(useFileManagerStore.getState().panes.left.selected).sort()).toEqual([
+      "/p/a",
+      "/p/b",
+    ]);
+  });
+
   // The menu owns every Cmd/Ctrl accelerator. If the handler acted on them too,
   // each command would run twice — so a modified arrow must do nothing here.
   it("ignores an arrow held with Cmd, which belongs to the menu", () => {

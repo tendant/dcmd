@@ -52,12 +52,11 @@ export function useGlobalKeyboard() {
           const newCursor = paneState.cursor + delta;
 
           if (e.shiftKey) {
-            // Shift+Arrow to select range
-            const rangeStart = paneState.rangeStart ?? paneState.cursor;
-            store.selectRange(pane, rangeStart, newCursor);
+            // Shift+Arrow extends the range and carries the cursor with it.
+            store.extendSelection(pane, newCursor);
+          } else {
+            store.setCursor(pane, newCursor);
           }
-
-          store.setCursor(pane, newCursor);
           break;
         }
 

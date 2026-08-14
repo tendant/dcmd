@@ -117,6 +117,55 @@ describe("the synthetic parent entry", () => {
   });
 });
 
+describe("extending a selection", () => {
+  const left = () => useFileManagerStore.getState().panes.left;
+  const marked = () => Array.from(left().selected).sort();
+
+  it("runs from the cursor row when no range is in progress", () => {
+    seedPane(2);
+    useFileManagerStore.getState().extendSelection("left", 3);
+    expect(marked()).toEqual(["/left/b.txt", "/left/c.txt"]);
+    expect(left().cursor).toBe(3);
+  });
+
+  // Regression: the anchor outlived the range it belonged to, so the next
+  // extension started from the old row and swallowed everything between.
+  it("re-anchors after the cursor is moved on its own", () => {
+    const s = () => useFileManagerStore.getState();
+    seedPane(1);
+    s().extendSelection("left", 2);
+    s().setCursor("left", 3);
+    s().extendSelection("left", 2);
+
+    expect(marked()).toEqual(["/left/b.txt", "/left/c.txt"]);
+  });
+
+  // Cmd+clicking one row and Shift+clicking another has to run between the two
+  // rows that were clicked, wherever the cursor happens to be sitting.
+  it("anchors on a row that was marked rather than on the cursor", () => {
+    const s = () => useFileManagerStore.getState();
+    seedPane(1);
+    s().toggleSelection("left", "/left/b.txt");
+    s().extendSelection("left", 3);
+
+    expect(marked()).toEqual(["/left/b.txt", "/left/c.txt"]);
+  });
+
+  it("never marks the synthetic parent row", () => {
+    seedPane(1);
+    useFileManagerStore.getState().extendSelection("left", 0);
+    expect(marked()).toEqual(["/left/a.txt"]);
+    expect(left().cursor).toBe(0);
+  });
+
+  it("holds at the last row rather than running off the end", () => {
+    seedPane(3);
+    useFileManagerStore.getState().extendSelection("left", 9);
+    expect(marked()).toEqual(["/left/c.txt"]);
+    expect(left().cursor).toBe(3);
+  });
+});
+
 describe("targetCount", () => {
   it("counts the cursor row when nothing is selected", () => {
     seedPane(2);

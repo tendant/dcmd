@@ -41,6 +41,12 @@ export interface PaneState {
   entries: FileEntry[];
   selected: Set<string>;
   cursor: number;
+  /**
+   * Where a range selection is being extended from, or null when none is in
+   * progress. Only Shift-extending and marking a row set it; every plain cursor
+   * move clears it, so the next Shift+Arrow or Shift+Click anchors on the row
+   * you are actually standing on rather than on wherever the last range began.
+   */
   rangeStart: number | null;
   loading: boolean;
   error: AppError | null;
@@ -343,7 +349,12 @@ export interface FileManagerState {
    * was one, so Escape can move on to the next thing it means if there was not.
    */
   cancelRemoteConnect: (pane: PaneId) => boolean;
-  selectRange: (pane: PaneId, fromIndex: number, toIndex: number) => void;
+  /**
+   * Runs the selection from the anchor to `toIndex` and puts the cursor there.
+   * Without a range in progress the anchor is the current cursor row, so
+   * Shift always starts from where you are.
+   */
+  extendSelection: (pane: PaneId, toIndex: number) => void;
   clearSelection: (pane: PaneId) => void;
   selectAll: (pane: PaneId) => void;
   invertSelection: (pane: PaneId) => void;
@@ -865,6 +876,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
           error: null,
           cursor: 0,
           selected: new Set(),
+          rangeStart: null,
           renameMode: null,
           // A filter belongs to the directory it was typed in; carrying it into
           // a new one would hide rows for no visible reason.
@@ -1002,7 +1014,9 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
           if (i >= 0) cursor = i + 1;
         }
 
-        return { panes: { ...state.panes, [pane]: { ...next, cursor } } };
+        // Rows may have appeared or vanished, so an index anchor no longer
+        // points at the row the range was started on. Drop it.
+        return { panes: { ...state.panes, [pane]: { ...next, cursor, rangeStart: null } } };
       });
     } catch (err) {
       set((state) => ({
@@ -1025,6 +1039,9 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
           [pane]: {
             ...paneState,
             cursor: clamped,
+            // Moving without extending ends the range: the next Shift starts
+            // from here, not from where an earlier range happened to begin.
+            rangeStart: null,
           },
         },
       };
@@ -1303,7 +1320,11 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       return {
         panes: {
           ...state.panes,
-          [pane]: { ...next, cursor: count > 0 ? Math.min(Math.max(paneState.cursor, 1), count) : 0 },
+          [pane]: {
+            ...next,
+            cursor: count > 0 ? Math.min(Math.max(paneState.cursor, 1), count) : 0,
+            rangeStart: null,
+          },
         },
       };
     });
@@ -1329,7 +1350,8 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
         const i = visibleEntries(next).findIndex((e) => e.path === anchor);
         if (i >= 0) cursor = i + 1;
       }
-      return { panes: { ...state.panes, [pane]: { ...next, cursor } } };
+      // Re-sorting moves every row, so an index anchor is meaningless after it.
+      return { panes: { ...state.panes, [pane]: { ...next, cursor, rangeStart: null } } };
     });
   },
 
@@ -1343,7 +1365,7 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       return {
         panes: {
           ...state.panes,
-          [pane]: { ...next, cursor: Math.min(paneState.cursor, count) },
+          [pane]: { ...next, cursor: Math.min(paneState.cursor, count), rangeStart: null },
         },
       };
     });
@@ -1493,49 +1515,49 @@ export const useFileManagerStore = create<FileManagerState>((set, get) => ({
       } else {
         newSelected.add(path);
       }
+      // Anchor on the row that was marked, which is not necessarily the cursor
+      // row: Cmd+clicking one row and then Shift+clicking another has to run
+      // between those two, not from wherever the cursor was left behind.
+      const i = visibleEntries(paneState).findIndex((e) => e.path === path);
       return {
         panes: {
           ...state.panes,
           [pane]: {
             ...paneState,
             selected: newSelected,
-            rangeStart: paneState.cursor,
+            rangeStart: i >= 0 ? i + 1 : paneState.cursor,
           },
         },
       };
     });
   },
 
-  selectRange: (pane, fromIndex, toIndex) => {
-    let start = Math.min(fromIndex, toIndex);
-    let end = Math.max(fromIndex, toIndex);
-
-    // Adjust for synthetic ".." parent entry at index 0
-    // Parent entry (index 0) cannot be selected
-    if (start === 0) start = 1;
-    if (end === 0) end = 1;
-
+  extendSelection: (pane, toIndex) => {
     set((state) => {
       const paneState = state.panes[pane];
-      const newSelected = new Set<string>();
-
-      // Convert display indices to entry indices (subtract 1 for the parent entry)
       const visible = visibleEntries(paneState);
+
+      // Display indices run 0 (the synthetic ".." row) to visible.length. The
+      // parent row is never a real entry, so a range that reaches it selects
+      // from the first real row instead.
+      const cursor = Math.max(0, Math.min(toIndex, visible.length));
+      const anchor = paneState.rangeStart ?? paneState.cursor;
+      const start = Math.max(1, Math.min(anchor, cursor));
+      const end = Math.max(anchor, cursor);
+
+      const selected = new Set<string>();
       for (let i = start; i <= end; i++) {
         const entry = visible[i - 1];
-        if (entry) {
-          newSelected.add(entry.path);
-        }
+        if (entry) selected.add(entry.path);
       }
 
+      // The cursor moves with the range, and the anchor outlives it so the
+      // next extension grows or shrinks the same range rather than starting a
+      // new one from the row this extension just landed on.
       return {
         panes: {
           ...state.panes,
-          [pane]: {
-            ...paneState,
-            selected: newSelected,
-            rangeStart: fromIndex,
-          },
+          [pane]: { ...paneState, selected, cursor, rangeStart: anchor },
         },
       };
     });
