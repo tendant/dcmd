@@ -25,7 +25,6 @@
     "active": true,
     "shortDescription": "A keyboard-first dual-pane file manager",
     "longDescription": "Two panes, driven from the keyboard. Browse, copy, move, rename and preview files locally or over SSH.",
-    "licenseFile": "../LICENSE",
     "category": "Utility",
     "targets": "all",
     "icon": [
