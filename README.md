@@ -107,6 +107,13 @@ media control, so they only reach the app with `Fn` held, or with *Use F1, F2,
 etc. keys as standard function keys* enabled in System Settings. The `⌘`
 bindings exist for that reason and do the same thing.
 
+**The function keys are listed along the foot of the window** — the six that are
+bound, and no others. Each is also a button, which is the way through on a Mac
+where the key itself is a media control; hovering one names its `⌘` equivalent.
+
+While renaming, the field is a text field: `⌘X`/`⌘C`/`⌘V` cut, copy and paste
+within it, `⌘Z` undoes, and `⌘A` selects the name rather than the pane's rows.
+
 **Right-click** a row, empty space, a places-bar chip or the bar itself for a
 menu of what applies, each item labelled with its keyboard shortcut.
 
