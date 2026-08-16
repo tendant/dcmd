@@ -7,6 +7,7 @@ import { ContextMenu } from "./ContextMenu";
 import { PreviewOverlay } from "./PreviewOverlay";
 import { CommandPalette } from "./CommandPalette";
 import { PlacesBar } from "./PlacesBar";
+import { FunctionKeyBar } from "./FunctionKeyBar";
 import { useFileManagerStore } from "../state/fileManagerStore";
 
 export function DualPaneLayout() {
@@ -40,6 +41,12 @@ export function DualPaneLayout() {
         )}
       </div>
       <TransferProgressBar />
+      {/*
+        Last, so it is the foot of the window rather than of a pane: the keys
+        act on whichever pane is active, and a copy of the bar in each would
+        say the same thing twice while claiming otherwise.
+      */}
+      <FunctionKeyBar />
       <Dialog />
       <ContextMenu />
       <PreviewOverlay />

@@ -182,6 +182,21 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         )?)
         .build()?;
 
+    // Text editing, for the rename and path inputs. These carry no ids and are
+    // never forwarded: macOS routes them down the responder chain to whatever
+    // is focused, which is the webview. Without this submenu Cmd+C in a rename
+    // field reaches nothing at all — the accelerator is only a key equivalent
+    // if some menu item claims it — so a filename could be edited but not
+    // copied out.
+    let edit = SubmenuBuilder::new(app, "Edit")
+        .item(&PredefinedMenuItem::undo(app, None)?)
+        .item(&PredefinedMenuItem::redo(app, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::cut(app, None)?)
+        .item(&PredefinedMenuItem::copy(app, None)?)
+        .item(&PredefinedMenuItem::paste(app, None)?)
+        .build()?;
+
     let go = SubmenuBuilder::new(app, "Go")
         .item(&item(ids::BACK, "Back", Some("CmdOrCtrl+["))?)
         .item(&item(ids::FORWARD, "Forward", Some("CmdOrCtrl+]"))?)
@@ -210,6 +225,11 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     // whose key is contextual carry it in the label rather than as an
     // accelerator, so the keyboard handler stays their only binding.
     let selection = SubmenuBuilder::new(app, "Selection")
+        // Cmd+A stays with the rows rather than going to Edit's predefined
+        // Select All: two items cannot share a key equivalent, and selecting
+        // every file is what the key means in a file manager. The frontend
+        // hands it to a focused text field when there is one, so renaming
+        // still gets the other meaning.
         .item(&item(ids::SELECT_ALL, "Select All", Some("CmdOrCtrl+A"))?)
         .item(&item(
             ids::DESELECT_ALL,
@@ -303,7 +323,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 
     let view = view.build()?;
 
-    Menu::with_items(app, &[&app_menu, &file, &go, &selection, &view])
+    Menu::with_items(app, &[&app_menu, &file, &edit, &go, &selection, &view])
 }
 
 /// Forwards a chosen item to the frontend, which owns what each command does.

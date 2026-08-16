@@ -82,7 +82,18 @@ export const MENU_ACTIONS: Record<string, (s: FileManagerState) => void> = {
   command_palette: (s) => s.openPalette(),
   switch_pane: (s) => s.setActivePane(s.activePane === "left" ? "right" : "left"),
 
-  select_all: (s) => s.selectAll(s.activePane),
+  select_all: (s) => {
+    // The menu owns Cmd+A, so it fires even while a rename or path field has
+    // focus, where selecting every row in the pane is not what was asked for.
+    // Edit's own Select All cannot take the key back — one key equivalent, one
+    // item — so the split is made here instead.
+    const el = document.activeElement;
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      el.select();
+      return;
+    }
+    s.selectAll(s.activePane);
+  },
   deselect_all: (s) => s.clearSelection(s.activePane),
   invert_selection: (s) => s.invertSelection(s.activePane),
   calc_size: (s) => {
